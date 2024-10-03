@@ -1,0 +1,41 @@
+version: "3.8"
+
+
+services:
+  tresor_server:
+    container_name: 'tresor_server'
+    build: .
+    volumes:
+      - './:/var/www/html'
+      - '/var/www/html/vendor'
+    ports:
+      - "3333:80"
+    depends_on:
+      - tresor_db
+  
+    restart: always
+  tresor_db:
+    image: postgis/postgis:11-2.5
+    container_name: 'tresor_db'
+    restart: always
+    ports:
+      - "54333:5432"
+    environment:
+      POSTGRES_PASSWORD: admintresor
+    
+  pgadmin:
+    container_name: 'tresor_pg'
+    image: dpage/pgadmin4
+    restart: always
+    ports:
+      - "5033:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@tresor.com
+      PGADMIN_DEFAULT_PASSWORD: admintresor
+    depends_on:
+      - tresor_db
+
+
+
+
+# psql -h localhost -p 54333 -U postgres -d postgres -f /Users/mac/Downloads/dumpfile.sql 
