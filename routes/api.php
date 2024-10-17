@@ -62,4 +62,3 @@ Route::delete('documents/{id}', [ContribuableController::class, 'deleteDocument'
 Route::get('document-types', [ContribuableController::class, 'getDocumentTypes']);
 
 Route::get('contribuables-all', [ContribuableController::class, 'getAllContribuables']);
-Route::get('payments-types', [ContribuableController::class, 'getPaymentTypes']);
