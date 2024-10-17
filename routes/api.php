@@ -3,7 +3,10 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BudgetController;
+use App\Http\Controllers\ProgrammeController;
 use App\Http\Controllers\ContribuableController;
+use App\Http\Controllers\RoleAnneeController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -62,3 +65,75 @@ Route::delete('documents/{id}', [ContribuableController::class, 'deleteDocument'
 Route::get('document-types', [ContribuableController::class, 'getDocumentTypes']);
 
 Route::get('contribuables-all', [ContribuableController::class, 'getAllContribuables']);
+Route::get('payments-types-data', [ContribuableController::class, 'getPaymentTypesData']);
+
+
+Route::get('/contribuables/filtered', [ContribuableController::class, 'getFilteredContribuables']);
+
+Route::post('/contribuables/{id}/payment-by-article', [ContribuableController::class, 'savePayment']);
+
+
+Route::post('/contribuables/{id}/payment-by-protocol', [ContribuableController::class, 'savePaymentEchance']);
+
+
+
+
+
+Route::prefix('programmes')->group(function () {
+    Route::get('/all', [ProgrammeController::class, 'getProgrammes']);
+    Route::post('/add', [ProgrammeController::class, 'addProgramme']);
+    Route::delete('/delete/{id}', [ProgrammeController::class, 'deleteProgramme']);
+    Route::get('/exportprogrammePDF/{id}', [ProgrammeController::class, 'exportProgrammePDF']);
+    Route::post('/addContribuables/{id}', [ProgrammeController::class, 'addContribuablesToProgramme']);
+});
+
+
+Route::post('budgets/{id}/upload-expense-document', [BudgetController::class, 'uploadExpenseDocument']);
+Route::post('budgets/{id}/upload-income-document', [BudgetController::class, 'uploadIncomeDocument']);
+
+Route::apiResource('budgets', controller: BudgetController::class);
+
+Route::get('years', [BudgetController::class, 'getYears']);
+Route::get('dashboard-stats', [ContribuableController::class, 'getDashboardStats']);
+
+
+
+// roles 
+Route::apiResource(name: 'role-annees', controller: RoleAnneeController::class);
+
+
+Route::get('/activites', [RoleAnneeController::class, 'indexActivites']);
+Route::post('/activites', [RoleAnneeController::class, 'storeActivite']);
+Route::get('/activites/{id}', [RoleAnneeController::class, 'showActivite']);
+Route::put('/activites/{id}', [RoleAnneeController::class, 'updateActivite']);
+Route::delete('/activites/{id}', [RoleAnneeController::class, 'destroyActivite']);
+
+// Tax Parameters (Forchets)
+Route::get('/tax-params', [RoleAnneeController::class, 'indexForchets']);
+Route::post('/tax-params', [RoleAnneeController::class, 'storeForchet']);
+Route::get('/tax-params/{id}', [RoleAnneeController::class, 'showForchet']);
+Route::put('/tax-params/{id}', [RoleAnneeController::class, 'updateForchet']);
+Route::delete('/tax-params/{id}', [RoleAnneeController::class, 'destroyForchet']);
+
+// Categories
+Route::get('/categories', [RoleAnneeController::class, 'indexCategories']);
+Route::post('/categories', [RoleAnneeController::class, 'storeCategorie']);
+Route::get('/categories/{id}', [RoleAnneeController::class, 'showCategorie']);
+Route::put('/categories/{id}', [RoleAnneeController::class, 'updateCategorie']);
+Route::delete('/categories/{id}', [RoleAnneeController::class, 'destroyCategorie']);
+
+// Additional routes
+Route::get('/emplacements', [RoleAnneeController::class, 'getEmplacements']);
+Route::get('/tailles', [RoleAnneeController::class, 'getTailles']);
+
+Route::get('/tax-payers/export-pvf/{id}', [ContribuableController::class, 'fichdefermercontribuable']);
+
+
+
+
+
+
+
+
+
+

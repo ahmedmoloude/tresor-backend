@@ -5,37 +5,32 @@ namespace App\Http\Controllers;
 use App\Models\Ged;
 use App\Models\Annee;
 use App\Models\Secteur;
-use App\Models\Document;
 use App\Models\Echeance;
 use App\Models\Payement;
 use App\Models\Protocole;
+use App\Models\RefBanque;
 use App\Models\RolesAnnee;
 use App\Models\MoisService;
 use App\Models\Contribuable;
 use App\Models\Payementmens;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
+use App\Models\RefApplication;
+use Illuminate\Support\Carbon;
 use App\Models\DetailsPayement;
 use App\Models\RefTypepayement;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\RefTypesDocument;
 use App\Models\RolesContribuable;
-use Illuminate\Http\JsonResponse;
 use App\Models\ContribuablesAnnee;
 use Illuminate\Support\Facades\DB;
-
 use App\Models\DetailsPayementmens;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Auth;
 use App\Models\GardeRolesContribuable;
 use App\Models\DegrevementContribuable;
-
 use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
+use Illuminate\Support\Facades\Validator;
 use App\Http\Requests\ContribuableRequest;
-use App\Http\Resources\ContribuableResource;
-use Illuminate\Container\Attributes\Storage;
 
 
 class ContribuableController extends Controller
@@ -47,25 +42,32 @@ class ContribuableController extends Controller
 
 
 
-    public function getAllContribuables(){
+
+    public function getAllContribuables()
+    {
 
         $annee = $this->current_year();
         $contribuablesIds = ContribuablesAnnee::where('annee', $annee)->where('etat', '<>', 'F')->orWhereNull('etat')->pluck('contribuable_id');
         $query = Contribuable::whereIn('id', $contribuablesIds)
-        ->with('activite', 'ref_taille_activite', 'ref_emplacement_activite');
+            ->with('activite', 'ref_taille_activite', 'ref_emplacement_activite');
 
         $contribuables = $query->get();
 
 
+
+
         $result = $contribuables->map(function ($contribuable) use ($annee) {
+
+            $contrib = ContribuablesAnnee::where('annee', $annee)->where('etat', 'F')->where('contribuable_id', $contribuable->id)->get();
+
             return [
                 'id' => $contribuable->id,
                 'nbreRole' => $this->getNbreRole($contribuable->id, $annee),
                 'nbrearticle' => $this->getNbreArticle($contribuable->id, $annee),
                 'article' => $this->getArticles($contribuable->id, $annee),
                 'montant' => $this->getMontantTotal($contribuable->id, $annee),
-                'roles' => RolesContribuable::with('role')->where('contribuable_id',$contribuable->id)->where('annee',$annee)->get(),
-                'protocoles' =>  Protocole::where('contribuable_id', $contribuable->id)->get(), 
+                'roles' => RolesContribuable::with('role')->where('contribuable_id', $contribuable->id)->where('annee', $annee)->get(),
+                'protocoles' => Protocole::where('contribuable_id', $contribuable->id)->get(),
                 'libelle' => $contribuable->libelle,
                 'representant' => $contribuable->representant,
                 'telephone' => $contribuable->telephone,
@@ -73,6 +75,7 @@ class ContribuableController extends Controller
                 'activite' => $contribuable->activite->libelle ?? null,
                 'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
                 'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
+                'is_close' => $contrib->count() > 0
             ];
         });
 
@@ -90,10 +93,9 @@ class ContribuableController extends Controller
         $search = $request->input('search');
 
 
-        $contribuablesIds = ContribuablesAnnee::where('annee', $annee)->where('etat', '<>', 'F')->orWhereNull('etat')->pluck('contribuable_id');
+        // $contribuablesIds = ContribuablesAnnee::where('annee', $annee)->where('etat', '<>', 'F')->orWhereNull('etat')->pluck('contribuable_id');
 
-        $query = Contribuable::whereIn('id', $contribuablesIds)
-            ->with('activite', 'ref_taille_activite', 'ref_emplacement_activite');
+        $query = Contribuable::with('activite', 'ref_taille_activite', 'ref_emplacement_activite');
 
         // Filter by role
         if ($roleId) {
@@ -120,6 +122,9 @@ class ContribuableController extends Controller
         $contribuables = $query->paginate($perPage, ['*'], 'page', $page);
 
         $result = $contribuables->map(function ($contribuable) use ($annee) {
+
+            $contrib = ContribuablesAnnee::where('annee', $annee)->where('etat', 'F')->where('contribuable_id', $contribuable->id)->get();
+
             return [
                 'id' => $contribuable->id,
                 'nbreRole' => $this->getNbreRole($contribuable->id, $annee),
@@ -134,6 +139,8 @@ class ContribuableController extends Controller
                 'activite' => $contribuable->activite->libelle ?? null,
                 'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
                 'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
+                'is_close' => $contrib->count() > 0
+
             ];
         });
 
@@ -728,7 +735,10 @@ class ContribuableController extends Controller
             'restapqye' => $restapqye,
         ];
 
-        $pdf = PDF::loadView('pdf.fiche_fermeture', $data);
+
+        Log::info('data ..'.json_encode($data));
+
+        $pdf = PDF::loadView('fiche_fermeture', $data);
 
         return $pdf->download('fiche_fermeture_' . $contribuable->libelle . '.pdf');
     }
@@ -867,90 +877,90 @@ class ContribuableController extends Controller
 
 
 
-   
+
 
     public function createProtocol(Request $request, $id)
-{
-    $request->validate([
-        // 'date_echeance' => 'required|date',
-        'description' => 'required|string',
-        'montant' => 'required|numeric',
-        'nombre_echeance' => 'required|integer|min:1|max:5',
-        'observation' => 'nullable|string',
-        'echeances' => 'array',
-        'echeances.*.date_echeance' => 'required|date',
-        'echeances.*.montant' => 'required|numeric',
-    ]);
-
-
-    $annee = $this->current_year();
-    $annee_id = Annee::where('etat', 1)->first()->id;
-
-    $montantTotal = str_replace(' ', '', $request->montant);
-    $montantTotal = (float)$montantTotal;
-
-    // Verify if the sum of echéances equals the total amount
-    $montantEcheances = collect($request->echeances)->sum('montant');
-
-
-    if ($montantEcheances != $montantTotal) {
-        return response()->json(['errors' => ['montant' => ['Les montants des échéances ne correspondent pas au montant total']]], 422);
-    }
-
-    DB::beginTransaction();
-
-    try {
-        $protocol = new Protocole([
-            'libelle' => $request->description,
-            'annee_id' => $annee_id,
-            'contribuable_id' => $id,
-            'montant' => $montantTotal,
-            // 'dateEch' => $request->date_echeance,
-            'remarque' => $request->observation,
-            'montant_arriere' => $montantTotal,
-            'nb_echeance' => $request->nombre_echeance,
+    {
+        $request->validate([
+            // 'date_echeance' => 'required|date',
+            'description' => 'required|string',
+            'montant' => 'required|numeric',
+            'nombre_echeance' => 'required|integer|min:1|max:5',
+            'observation' => 'nullable|string',
+            'echeances' => 'array',
+            'echeances.*.date_echeance' => 'required|date',
+            'echeances.*.montant' => 'required|numeric',
         ]);
 
-        $protocol->save();
 
-        // Create echéances
+        $annee = $this->current_year();
+        $annee_id = Annee::where('etat', 1)->first()->id;
+
+        $montantTotal = str_replace(' ', '', $request->montant);
+        $montantTotal = (float) $montantTotal;
+
+        // Verify if the sum of echéances equals the total amount
+        $montantEcheances = collect($request->echeances)->sum('montant');
 
 
-        foreach ($request->echeances as $echeance) {
-            $echeance = new Echeance([
-                'protocol_id' => $protocol->id,
-                'dateEch' => $echeance['date_echeance'],
+        if ($montantEcheances != $montantTotal) {
+            return response()->json(['errors' => ['montant' => ['Les montants des échéances ne correspondent pas au montant total']]], 422);
+        }
 
-                'montant' => $echeance['montant'],
+        DB::beginTransaction();
+
+        try {
+            $protocol = new Protocole([
+                'libelle' => $request->description,
+                'annee_id' => $annee_id,
+                'contribuable_id' => $id,
+                'montant' => $montantTotal,
+                // 'dateEch' => $request->date_echeance,
+                'remarque' => $request->observation,
+                'montant_arriere' => $montantTotal,
+                'nb_echeance' => $request->nombre_echeance,
             ]);
-            $echeance->save();
+
+            $protocol->save();
+
+            // Create echéances
+
+
+            foreach ($request->echeances as $echeance) {
+                $echeance = new Echeance([
+                    'protocol_id' => $protocol->id,
+                    'dateEch' => $echeance['date_echeance'],
+
+                    'montant' => $echeance['montant'],
+                ]);
+                $echeance->save();
+            }
+
+            // Update RolesContribuable
+            $roles = RolesContribuable::where('contribuable_id', $id)
+                ->where('annee', $annee)
+                ->get();
+
+            foreach ($roles as $role) {
+                $role->protocole_id = $protocol->id;
+                $role->save();
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Protocol created successfully',
+                'protocol' => $protocol
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'message' => 'Error creating protocol',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Update RolesContribuable
-        $roles = RolesContribuable::where('contribuable_id', $id)
-            ->where('annee', $annee)
-            ->get();
-
-        foreach ($roles as $role) {
-            $role->protocole_id = $protocol->id;
-            $role->save();
-        }
-
-        DB::commit();
-
-        return response()->json([
-            'message' => 'Protocol created successfully',
-            'protocol' => $protocol
-        ]);
-
-    } catch (\Exception $e) {
-        DB::rollback();
-        return response()->json([
-            'message' => 'Error creating protocol',
-            'error' => $e->getMessage()
-        ], 500);
     }
-}
 
     public function updateProtocol(Request $request, $id)
     {
@@ -986,13 +996,23 @@ class ContribuableController extends Controller
     public function getTaxPayerPayments($id, Request $request)
     {
         $selected = $request->input('selected', 'all');
+
+
         $queryPerArticle = Payementmens::where('contribuable_id', $id)
-            ->where('etat', '<>', 3)
+            ->where(function ($query) {
+                $query->where('etat', '<>', 3)
+                    ->orWhereNull('etat');
+            })
             ->with('role');
 
+
         $queryPerProtocol = Payement::where('contribuable_id', $id)
-            ->where('etat', '<>', 3)
+            ->where(function ($query) {
+                $query->where('etat', '<>', 3)
+                    ->orWhereNull('etat');
+            })
             ->with('protocol');
+
 
         if ($selected != 'all') {
             $queryPerArticle->orderByRaw('id = ? desc', [$selected]);
@@ -1101,11 +1121,11 @@ class ContribuableController extends Controller
     {
         $document = Ged::findOrFail($id);
         $filePath = public_path($document->emplacement . '/' . $document->id . '.' . $document->extension);
-        
+
         if (file_exists($filePath)) {
             unlink($filePath);
         }
-        
+
         $document->delete();
 
         return response()->json(['message' => 'Document deleted successfully']);
@@ -1120,10 +1140,550 @@ class ContribuableController extends Controller
 
 
 
-    public function getPaymentTypes(){
-        $response  =  RefTypepayement::all();
+    public function getPaymentTypesData()
+    {
+        $paymentTypes = RefTypepayement::all();
 
-        return response()->json($response);
+        $banques = RefBanque::all();
+        $applications = RefApplication::all();
 
+        return response()->json([
+            'paymentTypes' => $paymentTypes,
+            'banques' => $banques,
+            'applications' => $applications
+        ]);
+
+    }
+
+
+
+
+    public function savePayment(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'id' => 'required|exists:contribuables,id',
+            'article' => 'required|exists:roles_contribuables,id',
+            'montant' => 'required|numeric|min:0',
+            'typePayement' => 'required',
+            'date' => 'required|date',
+            'libelle' => 'required|string',
+            'libelle_ar' => 'nullable|string',
+            'decision' => 'required_if:typePayement,6|string',
+            'fichier' => 'nullable|file|max:50000',
+            'banque' => 'nullable|string',
+            'compte' => 'nullable|string',
+            'numCheque' => 'nullable|string',
+            'nom_app' => 'nullable|string',
+            'quitance' => 'nullable|string',
+            'titre' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $annee = $this->current_year();
+        $montantP = str_replace(' ', '', $request->montant);
+        $montantPP = (float) $montantP;
+        $article = $request->article;
+        $roleCont = RolesContribuable::findOrFail($article);
+
+        DB::beginTransaction();
+
+        try {
+            if ($request->typePayement == 'Dégrèvement') {
+                return $this->processDegrevementPayment($request, $roleCont, $annee, $montantPP);
+            } else {
+                return $this->processRegularPayment($request, $roleCont, $annee, $montantPP);
+            }
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function processDegrevementPayment(Request $request, RolesContribuable $roleCont, $annee, $montantPP)
+    {
+        $montant = $roleCont->montant - $montantPP;
+        $roleCont->montant = $montant;
+        $roleCont->save();
+
+        $degreve = DegrevementContribuable::create([
+            'contribuable_id' => $request->id,
+            'article_id' => $request->article,
+            'annee' => $annee,
+            'montant' => $montantPP,
+            'decision' => $request->decision,
+        ]);
+
+        if ($degreve->id && $request->hasFile('fichier')) {
+            $this->uploadDegrevementDocuments($request, $degreve);
+        }
+
+        DB::commit();
+        return response()->json(['message' => 'Degrevement payment processed successfully', 'id' => $degreve->id], 200);
+    }
+
+    private function processRegularPayment(Request $request, RolesContribuable $roleCont, $annee, $montantPP)
+    {
+        $montant_paye = $montantPP + $roleCont->montant_paye;
+        $roleCont->montant_paye = $montant_paye;
+        $restmontant = $roleCont->montant - $montant_paye;
+        $roleCont->save();
+
+        $payement = Payementmens::create([
+            'libelle' => $request->libelle,
+            'libelle_ar' => $request->libelle_ar,
+            'annee' => $annee,
+            'montant_arriere' => $restmontant,
+            'montant' => $montantPP,
+            'etat' => 2,
+            'role_id' => $roleCont->role_id,
+            'contribuable_id' => $request->id,
+            'date' => $request->date,
+        ]);
+
+        if ($payement->id) {
+            $this->createPaymentDetails($request, $payement, $montantPP, $roleCont);
+        }
+
+        DB::commit();
+        return response()->json(['message' => 'Regular payment processed successfully', 'id' => $payement->id], 200);
+    }
+
+    private function uploadDegrevementDocuments(Request $request, DegrevementContribuable $degreve)
+    {
+        $file = $request->file('fichier');
+        $document = Ged::create([
+            'libelle' => $request->decision,
+            'type' => 10,
+            'objet_id' => $request->id,
+            // 'ref_types_document_id' => RefTypesDocument::firstWhere('libelle', 'Dégrèvement')->id,
+            'type_ged' => 2,
+            'emplacement' => '/courris',
+            'extension' => $file->getClientOriginalExtension(),
+            'taille' => $file->getSize(),
+            'ordre' => ($request->filled('ordre')) ? $request->ordre : Ged::max('ordre') + 1,
+        ]);
+
+        $imageName = $document->id . '.' . $file->getClientOriginalExtension();
+        $file->move(base_path() . '/public/courris', $imageName);
+    }
+
+    private function createPaymentDetails(Request $request, Payementmens $payement, $montantPP, RolesContribuable $roleCont)
+    {
+        DetailsPayementmens::create([
+            'payement_id' => $payement->id,
+            'montant' => $montantPP,
+            'description' => 'Payement article ' . $roleCont->article,
+            // 'mode_payement' => RefTypepayement::firstWhere( 'libelle' ,$request->typePayement)->mode_payement,
+            'banque' => $request->banque,
+            'compte' => $request->compte,
+            'num_cheque' => $request->numCheque,
+            'nom_app' => $request->nom_app,
+            'quitance' => $request->quitance,
+            'titre' => $request->titre,
+        ]);
+    }
+
+
+
+
+    public function savePaymentEchance(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'id' => 'required|exists:contribuables,id',
+            'protocol' => 'required|exists:protocoles,id',
+            'montant' => 'required|numeric|min:0',
+            'typePayement' => 'required',
+            'echeances_id' => 'required|',
+            'compte' => 'nullable|string',
+            'numCheque' => 'nullable|string',
+            'nom_app' => 'nullable|string',
+            'quitance' => 'nullable|string',
+            'titre' => 'nullable|string',
+            'decision' => 'required_if:typePayement,6|string',
+            'fichier' => 'nullable|file|max:50000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $annee = $this->current_year();
+        $montantP = str_replace(' ', '', $request->montant);
+        $montantPP = (float) $montantP;
+
+        if ($montantPP <= 0) {
+            return response()->json(['error' => 'Le montant est incorrect'], 422);
+        }
+
+        $protocol = Protocole::findOrFail($request->protocol);
+        $montantCash = $montantPP;
+        $montant_ar = $protocol->montant_arriere - $montantCash;
+
+        DB::beginTransaction();
+
+        try {
+            if ($request->typePayement == 'Dégrèvement') {
+                return $this->processDegrevementPaymentEchance($request, $protocol, $annee, $montantPP, $montant_ar);
+            } else {
+                return $this->processRegularPaymentEchance($request, $protocol, $annee, $montantPP, $montant_ar);
+            }
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function processDegrevementPaymentEchance(Request $request, Protocole $protocol, $annee, $montantPP, $montant_ar)
+    {
+        $protocol->montantdegv = $protocol->montant_arriere;
+        $protocol->montant_arriere = $montant_ar;
+        $montantpr = $protocol->montant - $montantPP;
+        $protocol->montant = $montantpr;
+        $protocol->save();
+
+        $this->updateEcheances($request, $protocol, $montantPP);
+
+        $degreve = DegrevementContribuable::create([
+            'contribuable_id' => $request->id,
+            'protocol_id' => $request->protocol,
+            'annee' => $annee,
+            'montant' => $montantPP,
+            'decision' => $request->decision,
+        ]);
+
+        if ($degreve->id) {
+            $this->uploadDegrevementDocumentsEchance($request, $degreve);
+        }
+
+        DB::commit();
+        return response()->json(['message' => 'Degrevement payment processed successfully', 'id' => $degreve->id], 200);
+    }
+
+    private function processRegularPaymentEchance(Request $request, Protocole $protocol, $annee, $montantPP, $montant_ar)
+    {
+        $payement = Payement::create([
+            'libelle' => 'Payement du protocol ' . $protocol->libelle,
+            'libelle_ar' => 'Payement du protocol ' . $protocol->libelle,
+            'annee' => $annee,
+            'protocol_id' => $request->protocol,
+            'contribuable_id' => $request->id,
+            'etat' => ($montant_ar <= 0) ? 2 : null,
+            'montant' => $montantPP,
+            'date' => now(),
+            'montant_arriere' => $montant_ar,
+        ]);
+
+        Log::info('payement' . json_encode($payement));
+
+        if ($payement->id) {
+            $this->createPaymentDetailsEchance($request, $payement, $montantPP);
+            $this->updateBudgetDetails($request, $montantPP);
+            $protocol->montant_arriere = $montant_ar;
+            $protocol->save();
+            $this->updateEcheances($request, $protocol, $montantPP);
+        }
+
+        DB::commit();
+        return response()->json(['message' => 'Regular payment processed successfully', 'id' => $payement->id], 200);
+    }
+
+    private function updateEcheances(Request $request, Protocole $protocol, $montantPP)
+    {
+        if ($request->echeances_id == 'all') {
+            $echances = Echeance::where('protocol_id', $request->protocol)->get();
+            $montantCashecheance = $montantPP;
+            foreach ($echances as $echance) {
+                if ($montantCashecheance > 0) {
+                    $verif = $montantCashecheance - $echance->montant;
+                    $echance->montantdegv = $echance->montant;
+                    if ($verif >= 0) {
+                        $montantCashecheance -= $echance->montant;
+                        $echance->montant = 0;
+                    } else {
+                        $echance->montant -= $montantCashecheance;
+                        $montantCashecheance = 0;
+                    }
+                    $echance->save();
+                }
+            }
+        } else {
+            $echan1 = Echeance::findOrFail($request->echeances_id);
+            $echan1->montant = ($echan1->montant - $montantPP);
+            $echan1->save();
+        }
+    }
+
+    private function createPaymentDetailsEchance(Request $request, Payement $payement, $montantPP)
+    {
+        DetailsPayement::create([
+            'payement_id' => $payement->id,
+            'montant' => $montantPP,
+            'description' => $payement->libelle,
+            // 'mode_payement' => RefTypepayement::find($request->typePayement)->mode_payement,
+            'banque' => $request->banque,
+            'compte' => $request->compte,
+            'num_cheque' => $request->numCheque,
+            'nom_app' => $request->nom_app,
+            'quitance' => $request->quitance,
+            'titre' => $request->titre,
+        ]);
+    }
+
+    private function updateBudgetDetails(Request $request, $montantPP)
+    {
+        // $role = RolesContribuable::where('contribuable_id', $request->id)
+        //     ->where('annee', $this->current_year())
+        //     ->first();
+        // $nomenclature_element_id = RolesAnnee::find($role->role_id)->nomenclature_element_id;
+        // $last_id_budget = Budget::where('annee', $this->current_year())->max('id');
+        // $element = BudgetDetail::where('budget_id', $last_id_budget)
+        //     ->where('nomenclature_element_id', $nomenclature_element_id)
+        //     ->first();
+        // $nomeMontantFinal = $element->montant_realise + $montantPP;
+        // $element->montant_realise = $nomeMontantFinal;
+        // $element->save();
+    }
+
+    private function uploadDegrevementDocumentsEchance(Request $request, DegrevementContribuable $degreve)
+    {
+
+        $file = $request->file('fichier');
+
+        $document = Ged::create([
+            'libelle' => $request->decision,
+            'type' => 10,
+            'objet_id' => $request->id,
+            // 'ref_types_document_id' => 6,
+            'type_ged' => 2,
+            'emplacement' => '/courris',
+            'extension' => $file->getClientOriginalExtension(),
+            'taille' => $file->getSize(),
+            'ordre' => Ged::max('ordre') + 1,
+        ]);
+
+
+        $imageName = $document->id . '.' . $file->getClientOriginalExtension();
+        $file->move(base_path() . '/public/courris', $imageName);
+    }
+
+
+    
+    
+
+    public function getDashboardStats(Request $request)
+{
+    $currentYear = $this->current_year();
+    $year = $request->input('year', $currentYear);
+    $startDate = $request->input('startDate');
+    $endDate = $request->input('endDate');
+
+    $query = function ($model) use ($year, $startDate, $endDate) {
+        $query = $model::whereYear('created_at', $year);
+        if ($startDate && $endDate) {
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+        return $query;
+    };
+
+    // Current period stats
+    $totalDegrevements = $this->getDegrevements($query);
+    $totalPayment = $this->getPayments($query);
+    $totalDue = $this->getTotalDue($year);
+
+    // Previous period stats for comparison
+    $prevStartDate = $startDate ? Carbon::parse($startDate)->subMonth() : Carbon::now()->subMonth()->startOfMonth();
+    $prevEndDate = $endDate ? Carbon::parse($endDate)->subMonth() : Carbon::now()->subMonth()->endOfMonth();
+    
+    $prevQuery = function ($model) use ($year, $prevStartDate, $prevEndDate) {
+        return $model::whereYear('created_at', $year)
+            ->whereBetween('created_at', [$prevStartDate, $prevEndDate]);
+    };
+
+    $prevDegrevements = $this->getDegrevements($prevQuery);
+    $prevPayment = $this->getPayments($prevQuery);
+    $prevDue = $this->getTotalDue($year, $prevEndDate);
+
+    // Calculate percentage changes
+    $degrevermentChange = $this->calculatePercentageChange($prevDegrevements, $totalDegrevements);
+    $paymentChange = $this->calculatePercentageChange($prevPayment, $totalPayment);
+    $totalChange = $this->calculatePercentageChange($prevDegrevements + $prevPayment, $totalDegrevements + $totalPayment);
+    $restAPayerChange = $this->calculatePercentageChange($prevDue - $prevPayment, $totalDue - $totalPayment);
+
+    $totalContribuables = Contribuable::count();
+    $activeContribuables = ContribuablesAnnee::where('annee', $year)
+        ->where(function ($query) {
+            $query->where('etat', '<>', 'F')
+                ->orWhereNull('etat');
+        })
+        ->count();
+    $inactiveContribuables = $totalContribuables - $activeContribuables;
+
+    $recoveryRate = $totalDue > 0 ? $totalPayment / $totalDue : 0;
+
+    $monthlyPayments = $this->getMonthlyPaymentsBreakdown($year, $startDate, $endDate);
+    $taxDistribution = $this->getTaxDistribution($year, $startDate, $endDate);
+    $paymentTrend = $this->getPaymentTrend($year, $startDate, $endDate);
+
+    return response()->json([
+        'totalDegrevements' => $totalDegrevements,
+        'totalPayment' => $totalPayment,
+        'total' => $totalDegrevements + $totalPayment,
+        'totalRestAPayer' => $totalDue - $totalPayment,
+        'totalContribuables' => $totalContribuables,
+        'activeContribuables' => $activeContribuables,
+        'inactiveContribuables' => $inactiveContribuables,
+        'recoveryRate' => $recoveryRate,
+        'monthlyPayments' => $monthlyPayments,
+        'taxDistribution' => $taxDistribution,
+        'paymentTrend' => $paymentTrend,
+        'degrevermentChange' => $degrevermentChange,
+        'paymentChange' => $paymentChange,
+        'totalChange' => $totalChange,
+        'restAPayerChange' => $restAPayerChange,
+    ]);
+}
+
+
+private function calculatePercentageChange($oldValue, $newValue)
+{
+    if ($oldValue == 0) {
+        return $newValue > 0 ? 100 : 0;
+    }
+    return (($newValue - $oldValue) / $oldValue) * 100;
+}
+
+private function getDegrevements($query)
+{
+    return $query(DegrevementContribuable::class)->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
+}
+
+private function getPayments($query)
+{
+    $payements = $query(Payement::class)->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
+    $payementmens = $query(Payementmens::class)->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
+    return $payements + $payementmens;
+}
+
+private function getTotalDue($year, $endDate = null)
+{
+    $query = RolesContribuable::where('annee', $year);
+    if ($endDate) {
+        $query->where('created_at', '<=', $endDate);
+    }
+    return $query->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
+}
+
+private function getMonthlyPaymentsBreakdown($year, $startDate, $endDate)
+{
+    $query = Payement::where('annee', $year);
+    if ($startDate && $endDate) {
+        $query->whereBetween('date', [$startDate, $endDate]);
+    }
+    return $query->selectRaw("EXTRACT(MONTH FROM date) as month, SUM(CAST(montant AS DECIMAL(10,2))) as total")
+        ->groupBy('month')
+        ->orderBy('month')
+        ->get()
+        ->pluck('total', 'month')
+        ->toArray();
+}
+
+private function getTaxDistribution($year, $startDate, $endDate)
+{
+    $query = RolesContribuable::where('roles_contribuables.annee', $year)
+        ->join('roles_annees', 'roles_contribuables.role_id', '=', 'roles_annees.id');
+    if ($startDate && $endDate) {
+        $query->whereBetween('roles_contribuables.created_at', [$startDate, $endDate]);
+    }
+    return $query->selectRaw('roles_annees.libelle, SUM(CAST(roles_contribuables.montant AS DECIMAL(10,2))) as total')
+        ->groupBy('roles_annees.id', 'roles_annees.libelle')
+        ->get()
+        ->pluck('total', 'libelle')
+        ->toArray();
+}
+
+private function getPaymentTrend($year, $startDate, $endDate)
+{
+    $query = Payement::where('annee', $year);
+    if ($startDate && $endDate) {
+        $query->whereBetween('date', [$startDate, $endDate]);
+    }
+    return $query->selectRaw("DATE(date) as date, SUM(CAST(montant AS DECIMAL(10,2))) as total")
+        ->groupBy('date')
+        ->orderBy('date')
+        ->get()
+        ->pluck('total', 'date')
+        ->toArray();
+}
+    public function getFilteredContribuables(Request $request)
+    {
+        $request->validate([
+            'montantMinimum' => 'required|numeric|min:0',
+            'joursDepuisDernierPaiement' => 'required|integer|min:0',
+        ]);
+
+        $montantMinimum = $request->input('montantMinimum');
+        $joursDepuisDernierPaiement = $request->input('joursDepuisDernierPaiement');
+        $currentYear = $this->current_year();
+
+        $contribuables = Contribuable::select('contribuables.*')
+            ->join('roles_contribuables', 'contribuables.id', '=', 'roles_contribuables.contribuable_id')
+            ->where('roles_contribuables.annee', $currentYear)
+            ->groupBy('contribuables.id')
+            ->havingRaw('SUM(CAST(roles_contribuables.montant AS DECIMAL)) - COALESCE(SUM(CAST(roles_contribuables.montant_paye AS DECIMAL)), 0) >= ?', [$montantMinimum])
+            ->get();
+
+        $filteredContribuables = $contribuables->filter(function ($contribuable) use ($joursDepuisDernierPaiement) {
+            $lastPayment = $this->getLastPaymentDate($contribuable->id);
+            if (!$lastPayment) {
+                return true; // Include contribuables who have never made a payment
+            }
+            $daysSinceLastPayment = Carbon::parse($lastPayment)->diffInDays(Carbon::now());
+            return $daysSinceLastPayment >= $joursDepuisDernierPaiement;
+        });
+
+        $result = $filteredContribuables->map(function ($contribuable) use ($currentYear) {
+            return [
+                'id' => $contribuable->id,
+                'nom' => $contribuable->libelle,
+                'montant' => $this->getMontantDu($contribuable->id, $currentYear),
+                'dernierPaiement' => $this->getLastPaymentDate($contribuable->id),
+            ];
+        })->values()->all();
+
+
+        return response()->json($result);
+    }
+
+    private function getMontantDu($contribuableId, $annee)
+    {
+        $totalDu = RolesContribuable::where('contribuable_id', $contribuableId)
+            ->where('annee', $annee)
+            ->sum(DB::raw('CAST(montant AS DECIMAL) - COALESCE(CAST(montant_paye AS DECIMAL), 0)'));
+
+        return $totalDu;
+    }
+
+    private function getLastPaymentDate($contribuableId)
+    {
+        $lastPayement = Payement::where('contribuable_id', $contribuableId)
+            ->orderBy('date', 'desc')
+            ->first();
+
+        $lastPayementmens = Payementmens::where('contribuable_id', $contribuableId)
+            ->orderBy('date', 'desc')
+            ->first();
+
+        if ($lastPayement && $lastPayementmens) {
+            return $lastPayement->date > $lastPayementmens->date ? $lastPayement->date : $lastPayementmens->date;
+        } elseif ($lastPayement) {
+            return $lastPayement->date;
+        } elseif ($lastPayementmens) {
+            return $lastPayementmens->date;
+        }
+
+        return null;
     }
 }

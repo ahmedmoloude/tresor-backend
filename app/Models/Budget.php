@@ -48,7 +48,9 @@ class Budget extends Eloquent
 		'libelle_ar',
 		'ref_type_budget_id',
 		'ordre_complementaire',
-		'ref_etat_budget_id'
+		'ref_etat_budget_id',
+		'income_document',
+		'expense_document'
 	];
 
 	public function nomenclature()

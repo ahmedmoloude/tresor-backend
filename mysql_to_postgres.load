@@ -1,0 +1,13 @@
+load database
+     from mysql://root:root@localhost:3989/root
+     into postgresql://postgres:admintresor@localhost:54333/postgres
+
+ with include drop, create tables, create indexes, reset sequences,
+      create schema, schema only tables,
+      data only tables
+
+ set search_path to 'public'
+
+ alter schema 'root' rename to 'public'
+
+ set work_mem to '16MB', maintenance_work_mem to '512 MB';

@@ -8,14 +8,32 @@
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .margin-left { margin-left: 40px; }
+
+        .page {
+            width: 100%;
+            max-width: 210mm; /* A4 width */
+            margin: 0 auto;
+        }
+        .header-img {
+            width: 100%;
+            max-height: 150px; /* Adjust this value as needed */
+            object-fit: contain;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
+
+
+<div class="page">
+        <img class="header-img" src="{{ public_path('header.png') }}" alt="">
+
+
     <h1 class="text-center">PROCES-VERBAL DE FERMETURE, DE MAGASINS,<br>BOUTIQUES, ENTRPOTS REPRESENTATIONS<br>OU BUREAUX</h1>
     
     <p class="margin-left">L'an {{ $anneeen->description }}, le {{ date('d-m-Y') }},</p>
     
-    <p class="margin-left">Nous <b>{{ $agence->libelle }}</b>, Agent de poursuite assermenté en service à la perception de <b>TR NDB</b>,</p>
+    <p class="margin-left">Nous <b>{{ $agence->libelle ?? ''  }}</b>, Agent de poursuite assermenté en service à la perception de <b>TR NDB</b>,</p>
     
     <p class="margin-left">
         En application de l'article L.97 du Code Général des Impôts (Loi N<sup><u>o</u></sup> 2019-18 du 29 Avril 2019)<br><br>
@@ -37,5 +55,7 @@
             <td class="text-right"><b>L'AGENT DE POURSUITE</b></td>
         </tr>
     </table>
+
+</div>
 </body>
 </html>

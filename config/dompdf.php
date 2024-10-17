@@ -180,9 +180,6 @@ return [
          */
 
 
-         'default_font' => 'DejaVu Sans',
-
-
         /**
          * Image DPI setting
          *
@@ -300,6 +297,16 @@ return [
          * @var bool
          */
         'enable_html5_parser' => true,
+
+        'default_font' => 'Noto Sans',
+        'fontDir' => storage_path('fonts/'),
+        'fontCache' => storage_path('fonts/'),
+        'options' => [
+            'isRemoteEnabled' => true,
+            'isFontSubsettingEnabled' => true,
+            'isHtml5ParserEnabled' => true,
+            'isPhpEnabled' => true,
+        ],
     ],
 
 ];

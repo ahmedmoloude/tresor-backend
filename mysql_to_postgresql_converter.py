@@ -1,72 +1,81 @@
 import re
 import sys
 
-def convert_mysql_to_postgresql(input_file, output_file):
-    with open(input_file, 'r') as infile, open(output_file, 'w') as outfile:
-        in_create_table = False
-        table_name = ""
-        for line in infile:
-            # Remove MySQL-specific SET statements
-            if line.strip().startswith('SET '):
-                continue
+def convert_mysql_to_postgis(input_file, output_file):
+    try:
+        with open(input_file, 'r') as infile, open(output_file, 'w') as outfile:
+            content = infile.read()
+            
+            # Remove MySQL-specific syntax
+            content = re.sub(r'ENGINE=\w+', '', content)
+            content = re.sub(r'\s*DEFAULT CHARSET=\w+(\s*COLLATE=\w+)?', '', content)
+            content = content.replace('`', '"')
+            
+            # Convert data types
+            content = re.sub(r'int\(\d+\)', 'integer', content)
+            content = re.sub(r'bigint\(\d+\)', 'bigint', content)
+            content = re.sub(r'mediumint\(\d+\)', 'integer', content)
+            content = content.replace('UNSIGNED', '')
+            content = content.replace('longtext', 'TEXT')
+            
+            # Convert ENUM types to CHECK constraints
+            def enum_to_check(match):
+                column_name = match.group(1)
+                enum_values = match.group(2)
+                return f'{column_name} TEXT CHECK ({column_name} IN ({enum_values}))'
+            content = re.sub(r'"(\w+)"\s+enum\((.*?)\)', enum_to_check, content)
+            
+            # Convert AUTO_INCREMENT to SERIAL
+            content = content.replace('AUTO_INCREMENT', 'SERIAL')
+            
+            # Remove or adjust MySQL-specific column attributes
+            content = re.sub(r'DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP', 'DEFAULT CURRENT_TIMESTAMP', content)
+            
+            # Convert geometry types
+            content = content.replace('GEOMETRY', 'geometry')
+            content = re.sub(r'(POINT|LINESTRING|POLYGON)', r'geometry(\1)', content)
+            
+            # Update spatial functions
+            content = content.replace('GeomFromText', 'ST_GeomFromText')
+            content = re.sub(r'([XY])\(', r'ST_\1(', content)
+            
+            # Remove sql_mode and time_zone settings
+            content = re.sub(r'SET\s+(?:sql_mode|time_zone).*?;\n', '', content)
+            
+            # Convert KEY to INDEX
+            content = re.sub(r'ADD\s+(UNIQUE\s+)?KEY', r'ADD \1INDEX', content)
+            
+            # Remove ALGORITHM, DEFINER, and SQL SECURITY DEFINER from view definitions
+            content = re.sub(r'CREATE\s+ALGORITHM.*?DEFINER.*?SQL\s+SECURITY\s+DEFINER\s+VIEW', 'CREATE VIEW', content)
+            
+            # Fix INSERT statements
+            def fix_insert(match):
+                table = match.group(1)
+                columns = match.group(2)
+                values = match.group(3).replace('\n', ' ').split('),(')
+                fixed_values = []
+                for value in values:
+                    value = value.strip('(').strip(')')
+                    fixed_values.append(f"({value})")
+                return f"INSERT INTO {table} ({columns}) VALUES\n" + ",\n".join(fixed_values) + ";"
+            content = re.sub(r"INSERT INTO ([^\(]+) \((.*?)\) VALUES\s*\((.*?)\);", fix_insert, content, flags=re.DOTALL)
+            
+            # Remove SERIAL=X statements
+            content = re.sub(r'SERIAL=\d+;', '', content)
+            
+            # Convert MODIFY statements to ALTER COLUMN
+            content = re.sub(r'MODIFY\s+"(\w+)"\s+(\w+)(.*)SERIAL(.*?),?', r'ALTER COLUMN "\1" TYPE \2, ALTER COLUMN "\1" SET NOT NULL, ALTER COLUMN "\1" ADD GENERATED ALWAYS AS IDENTITY;', content)
+            
+            # Fix UNIQUE INDEX syntax
+            content = re.sub(r'ADD UNIQUE INDEX "(\w+)" \((.*?)\);', r'ADD CONSTRAINT "\1" UNIQUE (\2);', content)
+            
+            outfile.write(content)
 
-            # Convert CREATE TABLE syntax
-            if line.strip().startswith('CREATE TABLE'):
-                in_create_table = True
-                table_name = re.search(r'`(\w+)`', line).group(1)
-                line = f'CREATE TABLE IF NOT EXISTS "{table_name}" (\n'
+        print("Conversion complete. Please review the output file manually for any remaining issues.")
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        print(f"Error on line {sys.exc_info()[-1].tb_lineno}")
 
-            # Convert column definitions
-            if in_create_table:
-                line = re.sub(r'`(\w+)`', r'"\1"', line)  # Replace backticks with double quotes
-                line = re.sub(r'int\(\d+\)', 'integer', line)  # Convert int(11) to integer
-                line = re.sub(r'bigint\(\d+\)', 'bigint', line)  # Convert bigint(20) to bigint
-                line = line.replace(' unsigned', '')  # Remove unsigned
-                line = line.replace('AUTO_INCREMENT', 'SERIAL')  # Replace AUTO_INCREMENT with SERIAL
-
-            # End of CREATE TABLE
-            if line.strip() == ');':
-                in_create_table = False
-
-            # Convert INSERT statements
-            if line.strip().startswith('INSERT INTO'):
-                line = re.sub(r'`(\w+)`', r'"\1"', line)  # Replace backticks with double quotes
-
-            # Convert ALTER TABLE statements
-            if line.strip().startswith('ALTER TABLE'):
-                line = re.sub(r'`(\w+)`', r'"\1"', line)  # Replace backticks with double quotes
-                table_name = re.search(r'ALTER TABLE "(\w+)"', line).group(1)
-                
-                # Handle MODIFY statements
-                modify_match = re.search(r'MODIFY "(\w+)" (\w+)( NOT NULL)? SERIAL, SERIAL=(\d+);', line)
-                if modify_match:
-                    column = modify_match.group(1)
-                    data_type = modify_match.group(2)
-                    not_null = modify_match.group(3) or ''
-                    start_value = modify_match.group(4)
-                    line = f'ALTER TABLE "{table_name}" ALTER COLUMN "{column}" TYPE {data_type};\n'
-                    line += f'ALTER TABLE "{table_name}" ALTER COLUMN "{column}" {not_null};\n'
-                    line += f'ALTER TABLE "{table_name}" ALTER COLUMN "{column}" SET DEFAULT nextval(\'{table_name}_{column}_seq\');\n'
-                    line += f'CREATE SEQUENCE IF NOT EXISTS {table_name}_{column}_seq;\n'
-                    line += f'SELECT setval(\'{table_name}_{column}_seq\', {start_value});\n'
-                else:
-                    line = line.replace('MODIFY COLUMN', 'ALTER COLUMN')
-                    line = re.sub(r'int\(\d+\)', 'integer', line)  # Convert int(11) to integer
-                    line = re.sub(r'bigint\(\d+\)', 'bigint', line)  # Convert bigint(20) to bigint
-
-            # Remove ENGINE=InnoDB
-            line = re.sub(r'ENGINE=\w+', '', line)
-
-            # Write the converted line
-            outfile.write(line)
-
-    print(f"Conversion complete. Output file: {output_file}")
-
+# Usage
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python script.py input_file.sql output_file.sql")
-        sys.exit(1)
-    
-    input_file = sys.argv[1]
-    output_file = sys.argv[2]
-    convert_mysql_to_postgresql(input_file, output_file)
+    convert_mysql_to_postgis('/Users/mac/Desktop/dump.sql', 'postgis_dump.sql')

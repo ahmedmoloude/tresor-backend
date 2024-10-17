@@ -36,7 +36,8 @@ class DetailsPayementmens extends Eloquent
 	protected $fillable = [
 		'payement_id',
 		'montant',
-		'description'
+		'description',
+		'mode_payement',
 	];
 
 	public function payement()
