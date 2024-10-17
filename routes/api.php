@@ -133,6 +133,7 @@ Route::get('/tax-payers/export-pvf/{id}', [ContribuableController::class, 'fichd
 
 
 
+Route::get('/export-taxpayer-situation-pdf', [ContribuableController::class, 'pdfSuiviPayementCtb']);
 
 
 

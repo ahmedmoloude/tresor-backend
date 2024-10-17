@@ -43,45 +43,64 @@ class ContribuableController extends Controller
 
 
 
-    public function getAllContribuables()
-    {
+   
 
-        $annee = $this->current_year();
-        $contribuablesIds = ContribuablesAnnee::where('annee', $annee)->where('etat', '<>', 'F')->orWhereNull('etat')->pluck('contribuable_id');
-        $query = Contribuable::whereIn('id', $contribuablesIds)
-            ->with('activite', 'ref_taille_activite', 'ref_emplacement_activite');
+    
 
-        $contribuables = $query->get();
-
+    public function getAllContribuables(Request $request)
+{
+    $annee = $this->current_year();
+    $search = $request->input('search', '');
 
 
 
-        $result = $contribuables->map(function ($contribuable) use ($annee) {
+    Log::info('search' . json_encode($search));
 
-            $contrib = ContribuablesAnnee::where('annee', $annee)->where('etat', 'F')->where('contribuable_id', $contribuable->id)->get();
+    $contribuablesIds = ContribuablesAnnee::where('annee', $annee)
+        ->where('etat', '<>', 'F')
+        ->orWhereNull('etat')
+        ->pluck('contribuable_id');
 
-            return [
-                'id' => $contribuable->id,
-                'nbreRole' => $this->getNbreRole($contribuable->id, $annee),
-                'nbrearticle' => $this->getNbreArticle($contribuable->id, $annee),
-                'article' => $this->getArticles($contribuable->id, $annee),
-                'montant' => $this->getMontantTotal($contribuable->id, $annee),
-                'roles' => RolesContribuable::with('role')->where('contribuable_id', $contribuable->id)->where('annee', $annee)->get(),
-                'protocoles' => Protocole::where('contribuable_id', $contribuable->id)->get(),
-                'libelle' => $contribuable->libelle,
-                'representant' => $contribuable->representant,
-                'telephone' => $contribuable->telephone,
-                'adresse' => $contribuable->adresse,
-                'activite' => $contribuable->activite->libelle ?? null,
-                'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
-                'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
-                'is_close' => $contrib->count() > 0
-            ];
+    $query = Contribuable::whereIn('id', $contribuablesIds)
+        ->with('activite', 'ref_taille_activite', 'ref_emplacement_activite')
+        ->where(function($q) use ($search) {
+            $q->where('libelle', 'LIKE', "%{$search}%")
+              ->orWhere('representant', 'LIKE', "%{$search}%")
+              ->orWhere('telephone', 'LIKE', "%{$search}%");
         });
 
-        return response()->json($result);
-    }
+    $contribuables = $query->get();
 
+    $result = $contribuables->map(function ($contribuable) use ($annee) {
+        $contrib = ContribuablesAnnee::where('annee', $annee)
+            ->where('etat', 'F')
+            ->where('contribuable_id', $contribuable->id)
+            ->get();
+
+        return [
+            'id' => $contribuable->id,
+            'nbreRole' => $this->getNbreRole($contribuable->id, $annee),
+            'nbrearticle' => $this->getNbreArticle($contribuable->id, $annee),
+            'article' => $this->getArticles($contribuable->id, $annee),
+            'montant' => $this->getMontantTotal($contribuable->id, $annee),
+            'roles' => RolesContribuable::with('role')
+                ->where('contribuable_id', $contribuable->id)
+                ->where('annee', $annee)
+                ->get(),
+            'protocoles' => Protocole::where('contribuable_id', $contribuable->id)->get(),
+            'libelle' => $contribuable->libelle,
+            'representant' => $contribuable->representant,
+            'telephone' => $contribuable->telephone,
+            'adresse' => $contribuable->adresse,
+            'activite' => $contribuable->activite->libelle ?? null,
+            'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
+            'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
+            'is_close' => $contrib->count() > 0
+        ];
+    });
+
+    return response()->json($result);
+}
 
 
     public function getContribuables(Request $request)
@@ -1686,4 +1705,139 @@ private function getPaymentTrend($year, $startDate, $endDate)
 
         return null;
     }
+
+
+    
+
+    public function pdfSuiviPayementCtb(Request $request)
+    {
+
+
+
+
+        $filtrage = $request->input('filter');
+        $date1 = $request->input('startDate');
+        $date2 = $request->input('endDate');
+    
+        $role = 'all';
+        $annee = $this->current_year();
+        $data = $this->prepareData($annee, $filtrage, $date1, $date2, $role);
+
+
+        Log::info($data);
+
+
+        $pdf = PDF::loadView('suiv_payement_ctb', $data);
+
+        return $pdf->download('suiv_payement_ctb.pdf');
+
+    }
+
+    private function prepareData($annee, $filtrage, $date1, $date2, $role)
+    {
+        $data = [
+            'annee' => $annee,
+            'filtrage' => $filtrage,
+            'date1' => $date1,
+            'date2' => $date2,
+            'role' => $role,
+
+        ];
+
+        switch ($filtrage) {
+            case 1:
+                return $this->prepareDataFiltrage1($data);
+            case 2:
+                return $this->prepareDataFiltrage2($data);
+            case 3:
+                return $this->prepareDataFiltrage3($data);
+            default:
+                return $data;
+        }
+    }
+
+
+    private function prepareDataFiltrage1($data)
+{
+    Log::info('data ...' . json_encode($data));
+    
+    $query = Payement::where('annee', $data['annee'])
+        ->where('montant', '<>', 0);
+
+    if ($data['date1'] !== null) {
+        $query->where('date', '>=', $data['date1']);
+    }
+
+    if ($data['date2'] !== null) {
+        $query->where('date', '<=', $data['date2']);
+    }
+
+    $payementprotocoles = $query->get();
+
+    $queryPayements = Payementmens::where('annee', $data['annee'])
+        ->where('montant', '<>', 0);
+
+    if ($data['date1'] !== null) {
+        $queryPayements->where('date', '>=', $data['date1']);
+    }
+
+    if ($data['date2'] !== null) {
+        $queryPayements->where('date', '<=', $data['date2']);
+    }
+
+    if ($data['role'] != 'all') {
+        $queryPayements->where('role_id', $data['role']);
+        $roleli = RolesAnnee::find($data['role']);
+        $data['libelleRole'] = '<br>Rôle : <b>' . $roleli->libelle . '</b>';
+    }
+
+    $payements = $queryPayements->get();
+
+    $data['payements'] = $payements;
+    $data['payementprotocoles'] = $payementprotocoles;
+
+    return $data;
+}
+ 
+private function prepareDataFiltrage2($data)
+{
+    $query = DegrevementContribuable::where('annee', $data['annee'])
+        ->where('montant', '<>', 0);
+
+    if ($data['date1'] !== null) {
+        $query->where('created_at', '>=', $data['date1']);
+    }
+
+    if ($data['date2'] !== null) {
+        $query->where('created_at', '<=', $data['date2']);
+    }
+
+    $payements = $query->get();
+
+    $data['payements'] = $payements;
+
+    return $data;
+}
+
+private function prepareDataFiltrage3($data)
+{
+    $contribuables = Contribuable::all();
+    $data['contribuables'] = $contribuables;
+
+    if ($data['role'] !== null && $data['role'] !== 'all') {
+        $roleli = RolesAnnee::find($data['role']);
+        if ($roleli) {
+            $data['libelleRole'] = '<br>Rôle : <b>' . $roleli->libelle . '</b>';
+        } else {
+            Log::warning("Role not found for id: " . $data['role']);
+            $data['libelleRole'] = '<br>Rôle : <b>Non trouvé</b>';
+        }
+    }
+
+
+    Log::info('data 3'.json_encode($data));
+
+    return $data;
+}
+
 }
