@@ -50,7 +50,9 @@ class Budget extends Eloquent
 		'ordre_complementaire',
 		'ref_etat_budget_id',
 		'income_document',
-		'expense_document'
+		'expense_document',
+		'montant_patente',
+		'montant_cf'
 	];
 
 	public function nomenclature()

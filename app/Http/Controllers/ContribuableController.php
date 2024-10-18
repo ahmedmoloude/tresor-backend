@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Ged;
 use App\Models\Annee;
+use App\Models\Budget;
 use App\Models\Secteur;
 use App\Models\Echeance;
 use App\Models\Payement;
@@ -41,66 +42,112 @@ class ContribuableController extends Controller
     }
 
 
+    public function getAllContribuables(Request $request)
+    {
+        $annee = $this->current_year();
+        $search = $request->input('search', '');
+        $perPage = $request->input('per_page', 20);
+    
+        $query = Contribuable::query()
+            ->select('contribuables.*')
+            ->join('contribuables_annees', function ($join) use ($annee) {
+                $join->on('contribuables.id', '=', 'contribuables_annees.contribuable_id')
+                     ->where('contribuables_annees.annee', '=', $annee)
+                     ->where(function ($query) {
+                         $query->where('contribuables_annees.etat', '<>', 'F')
+                               ->orWhereNull('contribuables_annees.etat');
+                     });
+            })
+            ->with(['activite', 'ref_taille_activite', 'ref_emplacement_activite'])
+            ->where(function ($query) use ($search) {
+                $query->where('contribuables.libelle', 'ILIKE', "%$search")
+                      ->orWhere('contribuables.representant', 'ILIKE', "%$search%")
+                      ->orWhere('contribuables.telephone', 'ILIKE', "%$search%");
+            });
+    
+        $contribuables = $query->paginate($perPage);
+    
+        $contribuablesIds = $contribuables->pluck('id')->toArray();
+    
+        // Fetch related data for all contribuables at once
+        $rolesContribuables = RolesContribuable::with('role')
+            ->whereIn('contribuable_id', $contribuablesIds)
+            ->where('annee', $annee)
+            ->get()
+            ->groupBy('contribuable_id');
+    
+        $protocoles = Protocole::whereIn('contribuable_id', $contribuablesIds)
+            ->get()
+            ->groupBy('contribuable_id');
+    
+        $nbreRoles = $this->getNbreRoles($contribuablesIds, $annee);
+        $nbreArticles = $this->getNbreArticle($contribuablesIds, $annee);
+        $articles = $this->getArticles($contribuablesIds, $annee);
+        $montantTotals = $this->getMontantTotal($contribuablesIds, $annee);
+        $closedContribuables = $this->getClosedContribuables($contribuablesIds, $annee);
+    
+        $result = $contribuables->map(function ($contribuable) use (
+            $annee, 
+            $rolesContribuables, 
+            $protocoles, 
+            $nbreRoles, 
+            $nbreArticles, 
+            $articles, 
+            $montantTotals,
+            $closedContribuables
+        ) {
+            return [
+                'id' => $contribuable->id,
+                'nbreRole' => $nbreRoles[$contribuable->id] ?? 0,
+                'nbrearticle' => $nbreArticles[$contribuable->id] ?? 0,
+                'article' => $articles[$contribuable->id] ?? [],
+                'montant' => $montantTotals[$contribuable->id] ?? 0,
+                'roles' => $rolesContribuables[$contribuable->id] ?? [],
+                'protocoles' => $protocoles[$contribuable->id] ?? [],
+                'libelle' => $contribuable->libelle,
+                'representant' => $contribuable->representant,
+                'telephone' => $contribuable->telephone,
+                'adresse' => $contribuable->adresse,
+                'activite' => $contribuable->activite->libelle ?? null,
+                'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
+                'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
+                'is_close' => in_array($contribuable->id, $closedContribuables),
+            ];
+        });
+    
+        return response()->json([
+            'data' => $result,
+            'total' => $contribuables->total(),
+            'per_page' => $contribuables->perPage(),
+            'current_page' => $contribuables->currentPage(),
+            'last_page' => $contribuables->lastPage(),
+        ]);
+    }
+    
 
+    private function getNbreRoles($contribuablesIds, $annee)
+{
+    return RolesContribuable::whereIn('contribuable_id', $contribuablesIds)
+        ->where('annee', $annee)
+        ->groupBy('contribuable_id')
+        ->selectRaw('contribuable_id, COUNT(*) as count')
+        ->pluck('count', 'contribuable_id')
+        ->toArray();
+}
+
+
+        
+private function getClosedContribuables($contribuablesIds, $annee)
+{
+    return ContribuablesAnnee::where('annee', $annee)
+        ->where('etat', 'F')
+        ->whereIn('contribuable_id', $contribuablesIds)
+        ->pluck('contribuable_id')
+        ->toArray();
+}
 
    
 
-    
-
-    public function getAllContribuables(Request $request)
-{
-    $annee = $this->current_year();
-    $search = $request->input('search', '');
-
-
-
-    Log::info('search' . json_encode($search));
-
-    $contribuablesIds = ContribuablesAnnee::where('annee', $annee)
-        ->where('etat', '<>', 'F')
-        ->orWhereNull('etat')
-        ->pluck('contribuable_id');
-
-    $query = Contribuable::whereIn('id', $contribuablesIds)
-        ->with('activite', 'ref_taille_activite', 'ref_emplacement_activite')
-        ->where(function($q) use ($search) {
-            $q->where('libelle', 'LIKE', "%{$search}%")
-              ->orWhere('representant', 'LIKE', "%{$search}%")
-              ->orWhere('telephone', 'LIKE', value: "%{$search}%");
-        });
-
-    $contribuables = $query->get();
-
-    $result = $contribuables->map(function ($contribuable) use ($annee) {
-        $contrib = ContribuablesAnnee::where('annee', $annee)
-            ->where('etat', 'F')
-            ->where('contribuable_id', $contribuable->id)
-            ->get();
-
-        return [
-            'id' => $contribuable->id,
-            'nbreRole' => $this->getNbreRole($contribuable->id, $annee),
-            'nbrearticle' => $this->getNbreArticle($contribuable->id, $annee),
-            'article' => $this->getArticles($contribuable->id, $annee),
-            'montant' => $this->getMontantTotal($contribuable->id, $annee),
-            'roles' => RolesContribuable::with('role')
-                ->where('contribuable_id', $contribuable->id)
-                ->where('annee', $annee)
-                ->get(),
-            'protocoles' => Protocole::where('contribuable_id', $contribuable->id)->get(),
-            'libelle' => $contribuable->libelle,
-            'representant' => $contribuable->representant,
-            'telephone' => $contribuable->telephone,
-            'adresse' => $contribuable->adresse,
-            'activite' => $contribuable->activite->libelle ?? null,
-            'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
-            'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
-            'is_close' => $contrib->count() > 0
-        ];
-    });
-
-    return response()->json($result);
-}
 
 
     public function getContribuables(Request $request)
@@ -372,6 +419,20 @@ class ContribuableController extends Controller
      */
 
 
+
+     private function updateBudgetAmounts($year, $amount, $type)
+{
+    $budget = Budget::where('annee', $year)->first();
+
+
+    if ($type === 'cf') {
+        $budget->montant_cf = ($budget->montant_cf ?? 0) + $amount;
+    } elseif ($type === 'patente') {
+        $budget->montant_patente = ($budget->montant_patente ?? 0) + $amount;
+    }
+
+    $budget->save();
+}
     public function uploadExcel(Request $request)
     {
         $request->validate([
@@ -503,6 +564,11 @@ class ContribuableController extends Controller
 
     private function processRoleCF($rowData, $annee, $columnMap)
     {
+
+        
+        
+
+        $this->updateBudgetAmounts($annee, $rowData[$columnMap['Montant']], 'cf');
         return Contribuable::firstOrCreate(
             ['libelle' => $rowData[$columnMap['Contribuable']]],
             [
@@ -520,6 +586,10 @@ class ContribuableController extends Controller
 
     private function processRolePATENTE($rowData, $annee, $columnMap)
     {
+
+        $this->updateBudgetAmounts($annee, $rowData[$columnMap['Montant']], 'patente');
+
+        
         return Contribuable::firstOrCreate(
             ['nif' => $rowData[$columnMap['Article']]],
             [
@@ -1399,7 +1469,7 @@ class ContribuableController extends Controller
 
         if ($payement->id) {
             $this->createPaymentDetailsEchance($request, $payement, $montantPP);
-            $this->updateBudgetDetails($request, $montantPP);
+            // $this->updateBudgetDetails($request, $montantPP);
             $protocol->montant_arriere = $montant_ar;
             $protocol->save();
             $this->updateEcheances($request, $protocol, $montantPP);
@@ -1546,6 +1616,24 @@ class ContribuableController extends Controller
     $taxDistribution = $this->getTaxDistribution($year, $startDate, $endDate);
     $paymentTrend = $this->getPaymentTrend($year, $startDate, $endDate);
 
+
+
+
+    Log::info('year' . $year);
+
+     // Calculate past year dégrevements with proper casting
+    $pastYearDegrevements = DegrevementContribuable::whereYear('created_at', $year)
+        ->whereRaw('CAST(annee AS INTEGER) < EXTRACT(YEAR FROM created_at)')
+        ->sum(DB::raw('CAST(montant AS DECIMAL(15,2))'));
+
+    // Calculate past year payments with proper casting
+    $pastYearPayments = Payement::whereYear('date', $year)
+        ->whereRaw('CAST(annee AS INTEGER) < EXTRACT(YEAR FROM date)')
+        ->sum(DB::raw('CAST(montant AS DECIMAL(15,2))'));
+
+    $pastYearPayments += Payementmens::whereYear('date', $year)
+        ->whereRaw('CAST(annee AS INTEGER) < EXTRACT(YEAR FROM date)')
+        ->sum(DB::raw('CAST(montant AS DECIMAL(15,2))'));
     return response()->json([
         'totalDegrevements' => $totalDegrevements,
         'totalPayment' => $totalPayment,
@@ -1562,6 +1650,8 @@ class ContribuableController extends Controller
         'paymentChange' => $paymentChange,
         'totalChange' => $totalChange,
         'restAPayerChange' => $restAPayerChange,
+        'pastYearDegrevements' => $pastYearDegrevements,
+        'pastYearPayments' => $pastYearPayments,
     ]);
 }
 

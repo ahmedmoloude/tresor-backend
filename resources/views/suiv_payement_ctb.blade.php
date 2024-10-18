@@ -5,41 +5,82 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Suivi Payement CTB</title>
     <style>
+        
 
-body {
+        body {
             font-family: Arial, sans-serif;
             font-size: 10px;
-            line-height: 1.3;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .page {
+            width: 100%;
+            max-width: 210mm; /* A4 width */
+            margin: 0 auto;
+        }
+
+        .header-img {
+            width: 100%;
+            max-height: 150px;
+            /* Adjust this value as needed */
+            object-fit: contain;
+            margin-bottom: 40px;
         }
         h1 {
             text-align: center;
-            font-size: 16px;
+            font-size: 18px;
+            color: #333;
             margin-bottom: 20px;
+            text-transform: uppercase;
+            border-bottom: 2px solid #666;
+            padding-bottom: 10px;
         }
         .filter {
-            background-color: #f0f0f0;
+            background-color: #f5f5f5;
             padding: 10px;
             margin-bottom: 20px;
+            border: 1px solid #ddd;
         }
         table {
             width: 100%;
             border-collapse: collapse;
+            margin-bottom: 20px;
         }
         th, td {
-            border: 1px solid #000;
-            padding: 5px;
+            border: 1px solid #ddd;
+            padding: 8px;
             text-align: left;
         }
         th {
             background-color: #f0f0f0;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
         }
         .total {
             font-weight: bold;
+            background-color: #e0e0e0;
         }
         .signature {
             margin-top: 30px;
             text-align: right;
+            font-style: italic;
         }
+        .protocols {
+            margin-top: 40px;
+            border-top: 2px solid #666;
+            padding-top: 20px;
+        }
+        .protocols h2 {
+            color: #333;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
     </style>
 </head>
 <body>
@@ -287,136 +328,162 @@ body {
         }
     }
     @endphp
-    @if($date1 != 'all' && $date2 != 'all')
+
+
+<div class="page">
+
+        <img class="header-img" src="{{ public_path('header.png') }}" alt="">
+
+      @if($date1 != 'all' && $date2 != 'all')
         <div class="filter">
-            <table width="100%">
-                <tr><td>filtrage:</td></tr>
-                <tr>
-                    <td>
-                    Du <b>{{ Carbon\Carbon::parse($date1)->format('d-m-Y') }}</b>
-                    Au<b>{{ Carbon\Carbon::parse($date2)->format('d-m-Y') }}</b>
-                        @if(isset($libelleRole))
-                            {!! $libelleRole !!}
-                        @endif
-                    </td>
-                </tr>
-            </table>
-        </div><br>
+            <strong>Filtrage :</strong><br>
+            Du <b>{{ Carbon\Carbon::parse($date1)->format('d-m-Y') }}</b>
+            Au <b>{{ Carbon\Carbon::parse($date2)->format('d-m-Y') }}</b>
+            @if(isset($libelleRole))
+                {!! $libelleRole !!}
+            @endif
+        </div>
     @endif
 
     @if($filtrage == 1)
-        <table width="100%"  cellspacing="0" cellpadding="0">
-            <tr>
-                <td align="center" style="width:22%"><b>Contribuable</b></td>
-                <td style="width:10%"><b>Adresse</b></td>
-                <td style="width:18%"><b>Rôle</b></td>
-                <td style="width:40%;">
-                    <b>Details</b><br>
-                    <table  style="width: 100%;">
-                        <tr>
-                            <td style="width: 20%;"><b>Descript</b></td>
-                            <td style="width: 20%;"><b>Montant Payé</b></td>
-                            <td style="width: 20%;"><b>Date de paiement</b></td>
-                            <td style="width: 20%;"><b>N°Quittance</b></td>
-                            <td style="width: 20%;"><b>N°Titre</b></td>
-                        </tr>
-                    </table>
-                </td>
-                <td style="width:10%" align="center"><b>Reste à payer</b></td>
-            </tr>
-            @php $montants = 0; @endphp
-            @foreach($payements as $payement)
-                {!! situationpayement($payement->id) !!}
-                @php $montants += $payement->montant; @endphp
-            @endforeach
+        <table>
+            <thead>
+                <tr>
+                    <th>Contribuable</th>
+                    <th>Adresse</th>
+                    <th>Rôle</th>
+                    <th>Details</th>
+                    <th>Reste à payer</th>
+                </tr>
+            </thead>
+            <tbody>
+                @php $montants = 0; @endphp
+                @foreach($payements as $payement)
+                    {!! situationpayement($payement->id) !!}
+                    @php $montants += $payement->montant; @endphp
+                @endforeach
+            </tbody>
         </table>
-        <table >
-            <tr>
-                <td class="total"><b>Total</b></td>
-                <td align="center"><b>{{ strrev(wordwrap(strrev($montants), 3, ' ', true)) }}</b></td>
+        <table>
+            <tr class="total">
+                <td>Total</td>
+                <td>{{ strrev(wordwrap(strrev($montants), 3, ' ', true)) }}</td>
             </tr>
         </table>
-
-        @if($payementprotocoles->count() > 0)
-            <div style="page-break-after: always"></div>
-
-        @endif
 
     @elseif($filtrage == 2)
-        <table width="100%"  cellspacing="0" cellpadding="0">
-            <tr>
-                <td align="center" style="width:30%"><b>Contribuable</b></td>
-                <td style="width:15%"><b>Adresse</b></td>
-                <td style="width:40%;"><b>Decision</b></td>
-                <td style="width:15%"><b>Montant</b></td>
-            </tr>
-            @php $montants = 0; @endphp
-            @foreach($payements as $payement)
-                {!! situationpayement2($payement->id) !!}
-                @php $montants += $payement->montant; @endphp
-            @endforeach
+        <table>
+            <thead>
+                <tr>
+                    <th>Contribuable</th>
+                    <th>Adresse</th>
+                    <th>Decision</th>
+                    <th>Montant</th>
+                </tr>
+            </thead>
+            <tbody>
+                @php $montants = 0; @endphp
+                @foreach($payements as $payement)
+                    {!! situationpayement2($payement->id) !!}
+                    @php $montants += $payement->montant; @endphp
+                @endforeach
+            </tbody>
         </table>
-        <table >
-            <tr>
-                <td align=""><b>Total</b></td>
-                <td><b>{{ strrev(wordwrap(strrev($montants), 3, ' ', true)) }}</b></td>
+        <table>
+            <tr class="total">
+                <td>Total</td>
+                <td>{{ strrev(wordwrap(strrev($montants), 3, ' ', true)) }}</td>
             </tr>
         </table>
 
     @elseif($filtrage == 3)
-        <table width="100%"  cellspacing="0" cellpadding="0">
-            <tr>
-                <td style="width: 15%;" align="center"><b>Contribuable</b></td>
-                <td style="width:10%;"><b>Adresse</b></td>
-                <td style="width:10%;"><b>Impôts</b></td>
-                <td style="width:10%;"><b>Année</b></td>
-                <td style="width:5%;"><b>Article</b></td>
-                <td style="width:15%;" align="center"><b>Rôle</b></td>
-                <td style="width:7%;"><b>Montant</b></td>
-                <td style="width:8%;"><b>Montant due</b></td>
-                <td style="width:10%;"><b>Degrevement</b></td>
-                <td style="width:10%;"><b>Reste à payer</b></td>
-            </tr>
-            @php $montants = 0; @endphp
-            @foreach($contribuables as $contribuable)
-                @php
-                    $roles = $role != 'all'
-                        ? App\Models\RolesContribuable::where('contribuable_id', $contribuable->id)
-                            ->where('annee', $annee)
-                            ->where('id', $role)
-                            ->get()
-                        : App\Models\RolesContribuable::where('contribuable_id', $contribuable->id)
-                            ->where('annee', $annee)
-                            ->get();
+        <table>
+            <thead>
+                <tr>
+                    <th>Contribuable</th>
+                    <th>Adresse</th>
+                    <th>Impôts</th>
+                    <th>Année</th>
+                    <th>Article</th>
+                    <th>Rôle</th>
+                    <th>Montant</th>
+                    <th>Montant due</th>
+                    <th>Degrevement</th>
+                    <th>Reste à payer</th>
+                </tr>
+            </thead>
+            <tbody>
+                @php $montants = 0; @endphp
+                @foreach($contribuables as $contribuable)
+                    @php
+                        $roles = $role != 'all'
+                            ? App\Models\RolesContribuable::where('contribuable_id', $contribuable->id)
+                                ->where('annee', $annee)
+                                ->where('id', $role)
+                                ->get()
+                            : App\Models\RolesContribuable::where('contribuable_id', $contribuable->id)
+                                ->where('annee', $annee)
+                                ->get();
 
-                    $montantresr = $montantde = $montant_paye = $montantdgr = 0;
+                        $montantresr = $montantde = $montant_paye = $montantdgr = 0;
 
-                    foreach ($roles as $rol) {
-                        $montantde += $rol->montant;
-                        $montant_paye += $rol->montant_paye;
-                    }
+                        foreach ($roles as $rol) {
+                            $montantde += $rol->montant;
+                            $montant_paye += $rol->montant_paye;
+                        }
 
-                    $montantresr = $montantde - $montant_paye;
-                @endphp
+                        $montantresr = $montantde - $montant_paye;
+                    @endphp
 
-                @if($montantresr > 0)
-                    <!-- {!! contribuablePartie($contribuable->id, $annee, $montantresr, $role) !!} -->
-                    @php $montants += $montantresr; @endphp
-                @endif
-            @endforeach
+                    @if($montantresr > 0)
+                        {!! contribuablePartie($contribuable->id, $annee, $montantresr, $role) !!}
+                        @php $montants += $montantresr; @endphp
+                    @endif
+                @endforeach
+            </tbody>
         </table>
-        <table >
-            <tr>
-                <td align=""><b>Total</b></td>
+        <table>
+            <tr class="total">
+                <td>Total</td>
+                <td>{{ strrev(wordwrap(strrev($restmontrecouv), 3, ' ', true)) }}</td>
             </tr>
         </table>
     @endif
 
-    <br><br>
-    <table>
-        <tr>
-            <td align="right"><b>Signature</b></td>
-        </tr>
-    </table>
+    @if($payementprotocoles->count() > 0)
+        <div class="protocols">
+            <h2>Protocoles de Paiement</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Contribuable</th>
+                        <th>Adresse</th>
+                        <th>Details</th>
+                        <th>Reste à payer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @php $montantsProtocoles = 0; @endphp
+                    @foreach($payementprotocoles as $payement)
+                        {!! situationpayementprotocol($payement->id) !!}
+                        @php $montantsProtocoles += $payement->montant; @endphp
+                    @endforeach
+                </tbody>
+            </table>
+            <table>
+                <tr class="total">
+                    <td>Total Protocoles</td>
+                    <td>{{ strrev(wordwrap(strrev($montantsProtocoles), 3, ' ', true)) }}</td>
+                </tr>
+            </table>
+        </div>
+    @endif
+
+    <div class="signature">
+        <p>Signature: _______________________</p>
+        <p>Date: {{ date('d-m-Y') }}</p>
+    </div>
+    </div>
+
 </body>
 </html>

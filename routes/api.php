@@ -3,10 +3,11 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\UserController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\ProgrammeController;
-use App\Http\Controllers\ContribuableController;
 use App\Http\Controllers\RoleAnneeController;
+use App\Http\Controllers\ContribuableController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -138,3 +139,4 @@ Route::get('/export-taxpayer-situation-pdf', [ContribuableController::class, 'pd
 
 
 
+Route::apiResource('users', UserController::class);
