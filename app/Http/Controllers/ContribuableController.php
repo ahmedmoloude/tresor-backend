@@ -66,7 +66,7 @@ class ContribuableController extends Controller
         ->where(function($q) use ($search) {
             $q->where('libelle', 'LIKE', "%{$search}%")
               ->orWhere('representant', 'LIKE', "%{$search}%")
-              ->orWhere('telephone', 'LIKE', "%{$search}%");
+              ->orWhere('telephone', 'LIKE', value: "%{$search}%");
         });
 
     $contribuables = $query->get();
