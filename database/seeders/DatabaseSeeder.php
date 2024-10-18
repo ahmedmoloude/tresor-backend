@@ -18,7 +18,7 @@ class DatabaseSeeder extends Seeder
             'name' => 'Admin',
             'email' => 'admin@tresor.mr',
             'phone' => null,
-            'password' => Illuminate\Support\Facades\Hash::make(123456),
+            'password' => Hash::make(123456),
         ]);
     }
 }

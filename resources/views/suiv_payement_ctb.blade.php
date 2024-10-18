@@ -13,7 +13,7 @@
             line-height: 1.6;
             color: #333;
             margin: 0;
-            padding: 20px;
+            padding: 10px;
         }
 
         .page {
@@ -90,15 +90,15 @@
 
     $restmontrecouv = 0;
         
-         function contribuablePartie($id,$annee,$montantresr,$role)
+         function contribuablePartie($id,$montantresr,$role)
     {
         $contribuable = App\Models\Contribuable::find($id);
         $impots = 'CF';
         $nbrroles=0;
         $montantdue = 0;$articles='';
-        $roles = App\Models\RolesContribuable::where('contribuable_id', $id)->
-        where('annee', $annee)->get();
-        $degrevements = App\Models\DegrevementContribuable::where('contribuable_id', $id)->where('annee', $annee)->get();
+        $roles = App\Models\RolesContribuable::where('contribuable_id', $id)
+        ->get();
+        $degrevements = App\Models\DegrevementContribuable::where('contribuable_id', $id)->get();
         foreach ($degrevements as $deg)
         {
             $montantdue +=$deg->montant;
@@ -108,8 +108,7 @@
                 $impots =$role->emeregement;
             }
         }
-        $roles = App\Models\RolesContribuable::where('contribuable_id', $id)->
-        where('annee', $annee)->get();
+        $roles = App\Models\RolesContribuable::where('contribuable_id', $id)->get();
         if ($roles->count()){
             $nbrroles=1;
         }
@@ -141,7 +140,7 @@
             </tr>';
         }
         $html1 .='</table></td>';
-        $roles1 = App\Models\RolesAnnee::where('annee', $annee)->get();
+        $roles1 = App\Models\RolesAnnee::get();
 
         // $html = $role;
 
@@ -157,8 +156,8 @@
         $montantdegr = 0;
         $motantPayes = 0;
         $annee_id = App\Models\Annee::where('etat', 1)->get()->first()->id;
-        $payements = App\Models\Payement::where('contribuable_id', $id)->where('annee', $annee)->get();
-        $payementNrs = App\Models\Payementmens::where('contribuable_id', $id)->where('annee', $annee)->get();
+        $payements = App\Models\Payement::where('contribuable_id', $id)->get();
+        $payementNrs = App\Models\Payementmens::where('contribuable_id', $id)->get();
         foreach ($payements as $payement) {
             $detatPays = App\Models\DetailsPayement::where('payement_id', $payement->id)->get();
             foreach ($detatPays as $detatPa) {
@@ -190,7 +189,6 @@
                            '.$impots.'
                         </td>
                         <td style="width:10% ;" rowspan="'.$nbrroles.'">
-                             ' . $annee . '
                         </td>';
         $html .=$html1;
         $html.='
@@ -269,7 +267,7 @@
             $html1 .= '<tr>
                 <td style="width: 20%;">' . $detatPa->description . '</td>
                 <td style="width: 20%;">' . $detatPa->montant . '</td>
-                <td style="width: 20%;">' . $payement->date . '</td>
+                <td style="width: 20%;">' .Carbon\Carbon::parse($payement->date)->format('d-m-Y') . '</td>
                 <td style="width: 20%;">' . $detatPa->quitance . '</td>
                 <td style="width: 20%;">' . $detatPa->titre . '</td>
                 </tr>';
@@ -314,7 +312,7 @@
             $html1 .= '<tr>
                 <td style="width: 20%;">' . $detatPa->description . '</td>
                 <td style="width: 20%;">' . $detatPa->montant . '</td>
-                <td style="width: 20%;">' . $payement->date . '</td>
+                <td style="width: 20%;">' . Carbon\Carbon::parse($payement->date)->format('d-m-Y') . '</td>
                 <td style="width: 20%;">' . $detatPa->quitance . '</td>
                 <td style="width: 20%;">' . $detatPa->titre . '</td>
                 </tr>';
@@ -418,11 +416,9 @@
                     @php
                         $roles = $role != 'all'
                             ? App\Models\RolesContribuable::where('contribuable_id', $contribuable->id)
-                                ->where('annee', $annee)
                                 ->where('id', $role)
                                 ->get()
                             : App\Models\RolesContribuable::where('contribuable_id', $contribuable->id)
-                                ->where('annee', $annee)
                                 ->get();
 
                         $montantresr = $montantde = $montant_paye = $montantdgr = 0;
@@ -436,7 +432,7 @@
                     @endphp
 
                     @if($montantresr > 0)
-                        {!! contribuablePartie($contribuable->id, $annee, $montantresr, $role) !!}
+                        {!! contribuablePartie($contribuable->id, $montantresr, $role) !!}
                         @php $montants += $montantresr; @endphp
                     @endif
                 @endforeach
@@ -450,6 +446,8 @@
         </table>
     @endif
 
+
+    @if (isset($payementprotocoles))
     @if($payementprotocoles->count() > 0)
         <div class="protocols">
             <h2>Protocoles de Paiement</h2>
@@ -478,6 +476,8 @@
             </table>
         </div>
     @endif
+    @endif
+  
 
     <div class="signature">
         <p>Signature: _______________________</p>

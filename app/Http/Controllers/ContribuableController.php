@@ -148,76 +148,68 @@ private function getClosedContribuables($contribuablesIds, $annee)
 
    
 
+public function getContribuables(Request $request)
+{
+    $annee = $request->input('year') ?? $this->current_year();
+    $perPage = $request->input('per_page', 10);
+    $page = $request->input('page', 1);
+    $roleId = $request->input('role_id');
+    $search = $request->input('search');
 
+    $query = Contribuable::with('activite', 'ref_taille_activite', 'ref_emplacement_activite');
 
-    public function getContribuables(Request $request)
-    {
-        $annee = $request->input('year') ?? $this->current_year();
-        $perPage = $request->input('per_page', 10);
-        $page = $request->input('page', 1);
-        $roleId = $request->input('role_id');
-        $search = $request->input('search');
-
-
-        // $contribuablesIds = ContribuablesAnnee::where('annee', $annee)->where('etat', '<>', 'F')->orWhereNull('etat')->pluck('contribuable_id');
-
-        $query = Contribuable::with('activite', 'ref_taille_activite', 'ref_emplacement_activite');
-
-        // Filter by role
-        if ($roleId) {
-            $query->whereHas('rolesContribuables', function ($q) use ($roleId, $annee) {
-                $q->where('role_id', $roleId)->where('annee', $annee);
-            });
-        }
-
-        // Search functionality
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('libelle', 'like', "%{$search}%")
-                    ->orWhere('representant', 'like', "%{$search}%")
-                    ->orWhere('adresse', 'like', "%{$search}%")
-                    ->orWhere('telephone', 'like', "%{$search}%");
-            });
-        }
-
-
-
-        $query->orderBy('created_at', 'desc');
-
-
-        $contribuables = $query->paginate($perPage, ['*'], 'page', $page);
-
-        $result = $contribuables->map(function ($contribuable) use ($annee) {
-
-            $contrib = ContribuablesAnnee::where('annee', $annee)->where('etat', 'F')->where('contribuable_id', $contribuable->id)->get();
-
-            return [
-                'id' => $contribuable->id,
-                'nbreRole' => $this->getNbreRole($contribuable->id, $annee),
-                'nbrearticle' => $this->getNbreArticle($contribuable->id, $annee),
-                'article' => $this->getArticles($contribuable->id, $annee),
-                'montant' => $this->getMontantTotal($contribuable->id, $annee),
-                'Roles' => $this->getRoles($contribuable->id, $annee),
-                'nom' => $contribuable->libelle,
-                'representant' => $contribuable->representant,
-                'telephone' => $contribuable->telephone,
-                'adresse' => $contribuable->adresse,
-                'activite' => $contribuable->activite->libelle ?? null,
-                'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
-                'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
-                'is_close' => $contrib->count() > 0
-
-            ];
-        });
-
-        return response()->json([
-            'data' => $result,
-            'current_page' => $contribuables->currentPage(),
-            'last_page' => $contribuables->lastPage(),
-            'per_page' => $contribuables->perPage(),
-            'total' => $contribuables->total(),
-        ]);
+    // Filter by role
+    if ($roleId) {
+        $query->whereIn('id', \App\Models\RolesContribuable::where('annee', $annee)
+                                                           ->where('role_id', $roleId)
+                                                           ->pluck('contribuable_id'));
     }
+
+    // Search functionality
+    if ($search) {
+        $query->where(function ($q) use ($search) {
+            $q->where('libelle', 'like', "%{$search}%")
+              ->orWhere('representant', 'like', "%{$search}%")
+              ->orWhere('adresse', 'like', "%{$search}%")
+              ->orWhere('telephone', 'like', "%{$search}%");
+        });
+    }
+
+    $query->orderBy('created_at', 'desc');
+
+    $contribuables = $query->paginate($perPage, ['*'], 'page', $page);
+
+    $result = $contribuables->map(function ($contribuable) use ($annee) {
+        $contrib = \App\Models\ContribuablesAnnee::where('annee', $annee)
+                                                 ->where('etat', 'F')
+                                                 ->where('contribuable_id', $contribuable->id)
+                                                 ->get();
+        return [
+            'id' => $contribuable->id,
+            'nbreRole' => $this->getNbreRole($contribuable->id, $annee),
+            'nbrearticle' => $this->getNbreArticle($contribuable->id, $annee),
+            'article' => $this->getArticles($contribuable->id, $annee),
+            'montant' => $this->getMontantTotal($contribuable->id, $annee),
+            'Roles' => $this->getRoles($contribuable->id, $annee),
+            'nom' => $contribuable->libelle,
+            'representant' => $contribuable->representant,
+            'telephone' => $contribuable->telephone,
+            'adresse' => $contribuable->adresse,
+            'activite' => $contribuable->activite->libelle ?? null,
+            'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
+            'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
+            'is_close' => $contrib->count() > 0
+        ];
+    });
+
+    return response()->json([
+        'data' => $result,
+        'current_page' => $contribuables->currentPage(),
+        'last_page' => $contribuables->lastPage(),
+        'per_page' => $contribuables->perPage(),
+        'total' => $contribuables->total(),
+    ]);
+}
     private function getNbreRole($contribuableId, $annee)
     {
         $roles = RolesAnnee::where('annee', $annee)->get();
@@ -589,7 +581,7 @@ private function getClosedContribuables($contribuablesIds, $annee)
 
         $this->updateBudgetAmounts($annee, $rowData[$columnMap['Montant']], 'patente');
 
-        
+
         return Contribuable::firstOrCreate(
             ['nif' => $rowData[$columnMap['Article']]],
             [
@@ -705,6 +697,8 @@ private function getClosedContribuables($contribuablesIds, $annee)
             'protocoles' => $protocoles,
             'montantsgen' => $montantsgen,
         ];
+
+
 
         $pdf = PDF::loadView('contribuable_fiche', $data);
 
@@ -1810,11 +1804,8 @@ private function getPaymentTrend($year, $startDate, $endDate)
         $date2 = $request->input('endDate');
     
         $role = 'all';
-        $annee = $this->current_year();
-        $data = $this->prepareData($annee, $filtrage, $date1, $date2, $role);
+        $data = $this->prepareData( $filtrage, $date1, $date2, $role);
 
-
-        Log::info($data);
 
 
         $pdf = PDF::loadView('suiv_payement_ctb', $data);
@@ -1823,10 +1814,9 @@ private function getPaymentTrend($year, $startDate, $endDate)
 
     }
 
-    private function prepareData($annee, $filtrage, $date1, $date2, $role)
+    private function prepareData( $filtrage, $date1, $date2, $role)
     {
         $data = [
-            'annee' => $annee,
             'filtrage' => $filtrage,
             'date1' => $date1,
             'date2' => $date2,
@@ -1849,10 +1839,8 @@ private function getPaymentTrend($year, $startDate, $endDate)
 
     private function prepareDataFiltrage1($data)
 {
-    Log::info('data ...' . json_encode($data));
-    
-    $query = Payement::where('annee', $data['annee'])
-        ->where('montant', '<>', 0);
+
+    $query = Payement::where('montant', '<>', 0);
 
     if ($data['date1'] !== null) {
         $query->where('date', '>=', $data['date1']);
@@ -1864,8 +1852,7 @@ private function getPaymentTrend($year, $startDate, $endDate)
 
     $payementprotocoles = $query->get();
 
-    $queryPayements = Payementmens::where('annee', $data['annee'])
-        ->where('montant', '<>', 0);
+    $queryPayements = Payementmens::where('montant', '<>', 0);
 
     if ($data['date1'] !== null) {
         $queryPayements->where('date', '>=', $data['date1']);
@@ -1891,8 +1878,8 @@ private function getPaymentTrend($year, $startDate, $endDate)
  
 private function prepareDataFiltrage2($data)
 {
-    $query = DegrevementContribuable::where('annee', $data['annee'])
-        ->where('montant', '<>', 0);
+    $query = DegrevementContribuable::where('montant', '<>', 0);
+
 
     if ($data['date1'] !== null) {
         $query->where('created_at', '>=', $data['date1']);
@@ -1919,13 +1906,11 @@ private function prepareDataFiltrage3($data)
         if ($roleli) {
             $data['libelleRole'] = '<br>Rôle : <b>' . $roleli->libelle . '</b>';
         } else {
-            Log::warning("Role not found for id: " . $data['role']);
             $data['libelleRole'] = '<br>Rôle : <b>Non trouvé</b>';
         }
     }
 
 
-    Log::info('data 3'.json_encode($data));
 
     return $data;
 }
