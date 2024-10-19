@@ -41,10 +41,6 @@ class ContribuableController extends Controller
         return Annee::where('etat', 1)->first()->annee ?? null;
     }
 
-    
-    
-
-
 
     public function getAllContribuables(Request $request)
     {
@@ -1715,34 +1711,24 @@ class ContribuableController extends Controller
             ->pluck('total', 'date')
             ->toArray();
     }
-
-
-   
-
-
-
-
-
-   
-
     public function getFilteredContribuables(Request $request)
-{
-    $request->validate([
-        'montantMinimum' => 'nullable|numeric|min:0',
-        'joursDepuisDernierPaiement' => 'nullable|integer|min:0',
-        'search' => 'nullable|string',
-        'page' => 'nullable|integer|min:1',
-        'pageSize' => 'nullable|integer|min:1|max:100',
-    ]);
+    {
+        $request->validate([
+            'montantMinimum' => 'nullable|numeric|min:0',
+            'joursDepuisDernierPaiement' => 'nullable|integer|min:0',
+            'search' => 'nullable|string',
+            'page' => 'nullable|integer|min:1',
+            'pageSize' => 'nullable|integer|min:1|max:100',
+        ]);
 
-    $montantMinimum = $request->input('montantMinimum');
-    $joursDepuisDernierPaiement = $request->input('joursDepuisDernierPaiement');
-    $search = $request->input('search');
-    $page = $request->input('page', 1);
-    $pageSize = $request->input('pageSize', 20);
-    $currentYear = $this->current_year();
+        $montantMinimum = $request->input('montantMinimum');
+        $joursDepuisDernierPaiement = $request->input('joursDepuisDernierPaiement');
+        $search = $request->input('search');
+        $page = $request->input('page', default: 1);
+        $pageSize = $request->input('pageSize', 20);
+        $currentYear = $this->current_year();
 
-    $query = Contribuable::select(
+        $query = Contribuable::select(
             'contribuables.id',
             'contribuables.libelle',
             'contribuables.montant',
@@ -1750,57 +1736,54 @@ class ContribuableController extends Controller
         )
         ->selectRaw('SUM(CAST(NULLIF(roles_contribuables.montant, \'\') AS DECIMAL)) - COALESCE(SUM(CAST(NULLIF(roles_contribuables.montant_paye, \'\') AS DECIMAL)), 0) as montant_du')
         ->join('roles_contribuables', 'contribuables.id', '=', 'roles_contribuables.contribuable_id')
-        ->where('roles_contribuables.annee', $currentYear)
         ->whereNull('contribuables.deleted_at')
         ->groupBy('contribuables.id', 'contribuables.libelle', 'contribuables.montant', 'contribuables.date_mas');
 
-    if ($montantMinimum !== null) {
-        $query->havingRaw('SUM(CAST(NULLIF(roles_contribuables.montant, \'\') AS DECIMAL)) - COALESCE(SUM(CAST(NULLIF(roles_contribuables.montant_paye, \'\') AS DECIMAL)), 0) >= ?', [$montantMinimum]);
+        if ($montantMinimum !== null) {
+            $query->havingRaw('SUM(CAST(roles_contribuables.montant AS DECIMAL)) - COALESCE(SUM(CAST(roles_contribuables.montant_paye AS DECIMAL)), 0) >= ?', [$montantMinimum]);
+        }
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('contribuables.libelle', 'ILIKE', "%$search%")
+                    ->orWhere('contribuables.montant', 'ILIKE', "%$search%");
+            });
+        }
+
+        $totalCount = Contribuable::count();
+
+        $contribuables = $query->offset(($page - 1) * $pageSize)
+            ->limit($pageSize)
+            ->get();
+
+        if ($joursDepuisDernierPaiement !== null) {
+            $contribuables = $contribuables->filter(function ($contribuable) use ($joursDepuisDernierPaiement) {
+                $lastPayment = $this->getLastPaymentDate($contribuable->id);
+                if (!$lastPayment) {
+                    return true; // Include contribuables who have never made a payment
+                }
+                $daysSinceLastPayment = Carbon::parse($lastPayment)->diffInDays(Carbon::now());
+                return $daysSinceLastPayment >= $joursDepuisDernierPaiement;
+            });
+        }
+
+        $result = $contribuables->map(function ($contribuable) use ($currentYear) {
+            return [
+                'id' => $contribuable->id,
+                'nom' => $contribuable->libelle,
+                'montant' => $contribuable->montant_du,
+                'dernierPaiement' => $this->getLastPaymentDate($contribuable->id),
+            ];
+        })->values();
+
+        return response()->json([
+            'data' => $result,
+            'total' => $totalCount,
+            'current_page' => $page,
+            'per_page' => $pageSize,
+            'last_page' => ceil($totalCount / $pageSize),
+        ]);
     }
-
-    if ($search) {
-        $query->where(function ($q) use ($search) {
-            $q->where('contribuables.libelle', 'ILIKE', "%$search%")
-                ->orWhere('contribuables.montant', 'ILIKE', "%$search%");
-        });
-    }
-
-    $totalCount = $query->count();
-
-    $contribuables = $query->offset(($page - 1) * $pageSize)
-        ->limit($pageSize)
-        ->get();
-
-    if ($joursDepuisDernierPaiement !== null) {
-        $contribuables = $contribuables->filter(function ($contribuable) use ($joursDepuisDernierPaiement) {
-            $lastPayment = $this->getLastPaymentDate($contribuable->id);
-            if (!$lastPayment) {
-                return true; // Include contribuables who have never made a payment
-            }
-            $daysSinceLastPayment = Carbon::parse($lastPayment)->diffInDays(Carbon::now());
-            return $daysSinceLastPayment >= $joursDepuisDernierPaiement;
-        });
-    }
-
-    $result = $contribuables->map(function ($contribuable) use ($currentYear) {
-        return [
-            'id' => $contribuable->id,
-            'nom' => $contribuable->libelle,
-            'montant' => $contribuable->montant_du,
-            'dernierPaiement' => $this->getLastPaymentDate($contribuable->id),
-        ];
-    })->values();
-
-    return response()->json([
-        'data' => $result,
-        'total' => $totalCount,
-        'current_page' => $page,
-        'per_page' => $pageSize,
-        'last_page' => ceil($totalCount / $pageSize),
-    ]);
-}
-
-
     private function getLastPaymentDate($contribuableId)
     {
         $lastPayement = Payement::where('contribuable_id', $contribuableId)
