@@ -61,11 +61,16 @@ class ProgrammeController extends Controller
 
     public function exportProgrammePDF($id)
     {
-        $idc = env('APP_COMMUNE');
-    
         $programme = Programmejour::findOrFail($id);
         $annee = Annee::where('etat', 1)->first();
-        $contriProgs = Programmejourcont::where('programmejour_id', $id)->get();
+        $contriProgs = Programmejourcont::where('programmejour_id', $id)
+            ->with(['contribuable' => function($query) use ($annee) {
+                $query->with(['rolesContribuables' => function($query) use ($annee) {
+                    $query->where('annee', $annee->annee)
+                        ->with('role');
+                }]);
+            }])
+            ->get();
     
         $data = [
             'programme' => $programme,
@@ -74,7 +79,6 @@ class ProgrammeController extends Controller
         ];
     
         $pdf = PDF::loadView('programmes', $data);
-
     
         return $pdf->download("programme_{$id}.pdf");
     }

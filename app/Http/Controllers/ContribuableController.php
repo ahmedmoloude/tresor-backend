@@ -103,6 +103,10 @@ class ContribuableController extends Controller
                 'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
                 'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
                 'is_close' => in_array($contribuable->id, $closedContribuables),
+                'amountDue' => RolesContribuable::where('contribuable_id', $contribuable->id)
+                ->where('annee', $annee)
+                ->sum(DB::raw('CAST(montant AS DECIMAL(10,2)) - COALESCE(CAST(montant_paye AS DECIMAL(10,2)), 0)'))
+    
             ];
         });
 
@@ -593,7 +597,7 @@ class ContribuableController extends Controller
 
     public function getTaxPayerDetails($id)
     {
-        $contribuale = Contribuable::findOrFail($id);
+        $contribuable = Contribuable::findOrFail($id);
         $annee = $this->current_year();
         $annee_id = Annee::where('etat', 1)->first()->id;
         $protocoleEchencess = Protocole::where('contribuable_id', $id)
@@ -601,9 +605,19 @@ class ContribuableController extends Controller
             ->get();
         $nbrproEchen = $protocoleEchencess->count();
 
+        // Calculate the amount due
+        $amountDue = RolesContribuable::where('contribuable_id', $id)
+            ->where('annee', $annee)
+            ->sum(DB::raw('CAST(montant AS DECIMAL(10,2)) - COALESCE(CAST(montant_paye AS DECIMAL(10,2)), 0)'));
+
+        $protocoles = Protocole::where('contribuable_id', $id)
+            ->get();
+
+        $contribuable->protocoles = $protocoles;
         return response()->json([
-            'contribuale' => $contribuale,
-            'nbrproEchen' => $nbrproEchen
+            'contribuable' => $contribuable,
+            'nbrproEchen' => $nbrproEchen,
+            'amountDue' => $amountDue
         ]);
     }
 
@@ -661,47 +675,59 @@ class ContribuableController extends Controller
 
 
 
+
+
+
     public function exportcontribuablePDF($id)
-    {
-        $contribuable = Contribuable::findOrFail($id);
-        $annee = $this->current_year();
-        $annee_id = Annee::where('etat', 1)->first()->id;
-        $protocoles = Protocole::where('contribuable_id', $id)
-            ->where('annee_id', $annee_id)
-            ->get();
+{
 
-        $montantsgen = 0;
-        foreach ($protocoles as $protocole) {
-            $payements = Payement::where('contribuable_id', $id)
-                ->where('protocol_id', $protocole->id)
-                ->where('annee', $annee)
-                ->get();
 
-            foreach ($payements as $p) {
-                $montantsgen += $p->montant;
-            }
+    Log::info('exportcontribuablePDF' . $id);
+    $contribuable = Contribuable::findOrFail($id);
+    $annee = $this->current_year();
+    $annee_id = Annee::where('etat', 1)->first()->id;
+    
+    $protocoles = Protocole::where('contribuable_id', $id)
+        ->where('annee_id', $annee_id)
+        ->with(['payements' => function($query) use ($annee) {
+            $query->where('annee', $annee);
+        }])
+        ->get();
+
+    $paymentsPerArticle = Payementmens::where('contribuable_id', $id)
+        ->with(relations: 'role')
+        ->get();
+
+    $montantsgen = 0;
+    foreach ($protocoles as $protocole) {
+        foreach ($protocole->payements as $p) {
+            $montantsgen += $p->montant;
         }
-
-        $data = [
-            'contribuable' => $contribuable,
-            'annee' => $annee,
-            'protocoles' => $protocoles,
-            'montantsgen' => $montantsgen,
-        ];
-
-
-
-        $pdf = PDF::loadView('contribuable_fiche', $data);
-
-
-        $pdf->autoScriptToLang = true;
-        $pdf->autoArabic = true;
-        $pdf->autoLangToFont = true;
-
-
-
-        return $pdf->download('contribuable_fiche.pdf');
     }
+    foreach ($paymentsPerArticle as $p) {
+        $montantsgen += $p->montant;
+    }
+
+    $data = [
+        'contribuable' => $contribuable,
+        'annee' => $annee,
+        'protocoles' => $protocoles,
+        'paymentsPerArticle' => $paymentsPerArticle,
+        'montantsgen' => $montantsgen,
+    ];
+
+
+
+    Log::info('data ...' ,$data);
+
+    $pdf = PDF::loadView('contribuable_fiche', $data);
+
+    $pdf->autoScriptToLang = true;
+    $pdf->autoArabic = true;
+    $pdf->autoLangToFont = true;
+
+    return $pdf->download('contribuable_fiche.pdf');
+}
 
 
 

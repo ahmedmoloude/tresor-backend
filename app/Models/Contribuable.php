@@ -84,4 +84,9 @@ class Contribuable extends Eloquent
     {
         return $this->hasMany(\App\Models\ContribuablesAnnee::class);
     }
+
+	public function rolesContribuables()
+    {
+        return $this->hasMany(RolesContribuable::class);
+    }
 }

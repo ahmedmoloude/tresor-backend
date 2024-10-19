@@ -144,43 +144,46 @@
                 </tr>
             </table>
 
-            <h3>Protocoles des payements</h3>
-            <table class="specfique_table">
-                <tr>
-                    <th>Protocole</th>
-                    <th>Description</th>
-                    <th>Montant</th>
-                    <th>Paiements</th>
-                </tr>
-                @foreach ($protocoles as $protocole)
-                    <tr>
-                        <td colspan="4">{{ $protocole->libelle }} (Date: {{ $protocole->dateEch }})</td>
-                    </tr>
-                    @php
-                        $montants = 0;
-                        $payements = App\Models\Payement::where('contribuable_id', $contribuable->id)
-                            ->where('protocol_id', $protocole->id)
-                            ->where('annee', $annee)
-                            ->get();
-                    @endphp
-                    @foreach ($payements as $p)
-                        <tr>
-                            <td colspan="2">{{ $p->libelle }} (Date: {{ $p->created_at }})</td>
-                            <td class="text-right">{{ number_format((float)($p->montant), 2) }}</td>
-                            <td></td>
-                        </tr>
-                        @php $montants += $p->montant; @endphp
-                    @endforeach
-                @endforeach
-                <tr>
-                    <td colspan="3"><b>Total des payements</b></td>
-                    <td class="text-right">{{ number_format((float)($montantsgen), 2) }}</td>
-                </tr>
-                <tr>
-                    <td colspan="3"><b>Total reste</b></td>
-                    <td class="text-right">{{ number_format((float)($contribuable->montant - $montantsgen), 2) }}</td>
-                </tr>
-            </table>
+            
+            <h3>Protocoles et paiements</h3>
+<table class="specfique_table">
+    <tr>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Date</th>
+        <th>Montant</th>
+    </tr>
+    @foreach ($protocoles as $protocole)
+        <tr>
+            <td colspan="4"><strong>Protocole: {{ $protocole->libelle }}</strong> (Date: {{ $protocole->dateEch }})</td>
+        </tr>
+        @foreach ($protocole->payements as $p)
+            <tr>
+                <td>Protocole</td>
+                <td>{{ $p->libelle }}</td>
+                <td>{{ $p->created_at }}</td>
+                <td class="text-right">{{ number_format((float)($p->montant), 2) }}</td>
+            </tr>
+        @endforeach
+    @endforeach
+    @foreach ($paymentsPerArticle as $p)
+        <tr>
+            <td>Article</td>
+            <td>{{ $p->libelle }} ({{ $p->role->libelle ?? 'N/A' }})</td>
+            <td>{{ $p->created_at }}</td>
+            <td class="text-right">{{ number_format((float)($p->montant), 2) }}</td>
+        </tr>
+    @endforeach
+    <tr>
+        <td colspan="3"><b>Total des paiements</b></td>
+        <td class="text-right">{{ number_format((float)($montantsgen), 2) }}</td>
+    </tr>
+    <tr>
+        <td colspan="3"><b>Total reste</b></td>
+        <td class="text-right">{{ number_format((float)($contribuable->montant - $montantsgen), 2) }}</td>
+    </tr>
+</table>
+
 
             <p class="right-align"><b>Le Directeur</b></p>
         </div>
