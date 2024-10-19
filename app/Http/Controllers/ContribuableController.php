@@ -1720,6 +1720,9 @@ class ContribuableController extends Controller
    
 
 
+
+
+
     public function getFilteredContribuables(Request $request)
     {
         $request->validate([
@@ -1789,6 +1792,8 @@ class ContribuableController extends Controller
             'last_page' => ceil($totalCount / $pageSize),
         ]);
     }
+
+    
     private function getLastPaymentDate($contribuableId)
     {
         $lastPayement = Payement::where('contribuable_id', $contribuableId)
