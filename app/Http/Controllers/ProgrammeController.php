@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+
+use Illuminate\Support\Facades\DB;
 use PDF;
 use App\Models\Annee;
 use App\Models\Contribuable;
@@ -119,4 +121,56 @@ class ProgrammeController extends Controller
         return response()->json(['message' => 'Programme deleted successfully']);
     }
 
+
+
+
+    public function addProgrammeWithContribuables(Request $request)
+    {
+        $request->validate([
+            'libelle' => 'required|string',
+            'date' => 'required|date',
+            'montantMinimum' => 'nullable|numeric|min:0',
+            'joursDepuisDernierPaiement' => 'nullable|integer|min:0',
+            'contribuables' => 'required|array|min:1',
+            'contribuables.*' => 'exists:contribuables,id'
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $programme = Programmejour::create([
+                'libelle' => $request->libelle,
+                'date' => $request->date,
+                'montant_minimum' => $request->montantMinimum,
+                'jours_depuis_dernier_paiement' => $request->joursDepuisDernierPaiement,
+            ]);
+
+
+
+
+            $id = $programme->id;
+
+            foreach ($request->contribuables as $contribuableId) {
+                Programmejourcont::create([
+                    'programmejour_id' => $id,
+                    'contribuable_id' => $contribuableId
+                ]);
+            }
+    
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Programme created successfully with contribuables',
+                'programme' => $programme->load('contribuables')
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Error creating programme with contribuables',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

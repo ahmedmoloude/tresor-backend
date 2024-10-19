@@ -41,61 +41,53 @@ class ContribuableController extends Controller
         return Annee::where('etat', 1)->first()->annee ?? null;
     }
 
+    
 
     public function getAllContribuables(Request $request)
     {
         $annee = $this->current_year();
         $search = $request->input('search', '');
         $perPage = $request->input('per_page', 20);
-    
+
         $query = Contribuable::query()
             ->select('contribuables.*')
             ->join('contribuables_annees', function ($join) use ($annee) {
                 $join->on('contribuables.id', '=', 'contribuables_annees.contribuable_id')
-                     ->where('contribuables_annees.annee', '=', $annee)
-                     ->where(function ($query) {
-                         $query->where('contribuables_annees.etat', '<>', 'F')
-                               ->orWhereNull('contribuables_annees.etat');
-                     });
+                    ->where('contribuables_annees.annee', '=', $annee)
+                    ->where(function ($query) {
+                        $query->where('contribuables_annees.etat', '<>', 'F')
+                            ->orWhereNull('contribuables_annees.etat');
+                    });
             })
             ->with(['activite', 'ref_taille_activite', 'ref_emplacement_activite'])
             ->where(function ($query) use ($search) {
                 $query->where('contribuables.libelle', 'ILIKE', "%$search")
-                      ->orWhere('contribuables.representant', 'ILIKE', "%$search%")
-                      ->orWhere('contribuables.telephone', 'ILIKE', "%$search%");
+                    ->orWhere('contribuables.representant', 'ILIKE', "%$search%")
+                    ->orWhere('contribuables.telephone', 'ILIKE', "%$search%");
             });
-    
+
         $contribuables = $query->paginate($perPage);
-    
+
         $contribuablesIds = $contribuables->pluck('id')->toArray();
-    
+
         // Fetch related data for all contribuables at once
         $rolesContribuables = RolesContribuable::with('role')
             ->whereIn('contribuable_id', $contribuablesIds)
             ->where('annee', $annee)
             ->get()
             ->groupBy('contribuable_id');
-    
+
         $protocoles = Protocole::whereIn('contribuable_id', $contribuablesIds)
             ->get()
             ->groupBy('contribuable_id');
-    
+
         $nbreRoles = $this->getNbreRoles($contribuablesIds, $annee);
         $nbreArticles = $this->getNbreArticle($contribuablesIds, $annee);
         $articles = $this->getArticles($contribuablesIds, $annee);
         $montantTotals = $this->getMontantTotal($contribuablesIds, $annee);
         $closedContribuables = $this->getClosedContribuables($contribuablesIds, $annee);
-    
-        $result = $contribuables->map(function ($contribuable) use (
-            $annee, 
-            $rolesContribuables, 
-            $protocoles, 
-            $nbreRoles, 
-            $nbreArticles, 
-            $articles, 
-            $montantTotals,
-            $closedContribuables
-        ) {
+
+        $result = $contribuables->map(function ($contribuable) use ($annee, $rolesContribuables, $protocoles, $nbreRoles, $nbreArticles, $articles, $montantTotals, $closedContribuables) {
             return [
                 'id' => $contribuable->id,
                 'nbreRole' => $nbreRoles[$contribuable->id] ?? 0,
@@ -114,7 +106,7 @@ class ContribuableController extends Controller
                 'is_close' => in_array($contribuable->id, $closedContribuables),
             ];
         });
-    
+
         return response()->json([
             'data' => $result,
             'total' => $contribuables->total(),
@@ -123,93 +115,93 @@ class ContribuableController extends Controller
             'last_page' => $contribuables->lastPage(),
         ]);
     }
-    
+
 
     private function getNbreRoles($contribuablesIds, $annee)
-{
-    return RolesContribuable::whereIn('contribuable_id', $contribuablesIds)
-        ->where('annee', $annee)
-        ->groupBy('contribuable_id')
-        ->selectRaw('contribuable_id, COUNT(*) as count')
-        ->pluck('count', 'contribuable_id')
-        ->toArray();
-}
-
-
-        
-private function getClosedContribuables($contribuablesIds, $annee)
-{
-    return ContribuablesAnnee::where('annee', $annee)
-        ->where('etat', 'F')
-        ->whereIn('contribuable_id', $contribuablesIds)
-        ->pluck('contribuable_id')
-        ->toArray();
-}
-
-   
-
-public function getContribuables(Request $request)
-{
-    $annee = $request->input('year') ?? $this->current_year();
-    $perPage = $request->input('per_page', 10);
-    $page = $request->input('page', 1);
-    $roleId = $request->input('role_id');
-    $search = $request->input('search');
-
-    $query = Contribuable::with('activite', 'ref_taille_activite', 'ref_emplacement_activite');
-
-    // Filter by role
-    if ($roleId) {
-        $query->whereIn('id', \App\Models\RolesContribuable::where('annee', $annee)
-                                                           ->where('role_id', $roleId)
-                                                           ->pluck('contribuable_id'));
+    {
+        return RolesContribuable::whereIn('contribuable_id', $contribuablesIds)
+            ->where('annee', $annee)
+            ->groupBy('contribuable_id')
+            ->selectRaw('contribuable_id, COUNT(*) as count')
+            ->pluck('count', 'contribuable_id')
+            ->toArray();
     }
 
-    // Search functionality
-    if ($search) {
-        $query->where(function ($q) use ($search) {
-            $q->where('libelle', 'like', "%{$search}%")
-              ->orWhere('representant', 'like', "%{$search}%")
-              ->orWhere('adresse', 'like', "%{$search}%")
-              ->orWhere('telephone', 'like', "%{$search}%");
+
+
+    private function getClosedContribuables($contribuablesIds, $annee)
+    {
+        return ContribuablesAnnee::where('annee', $annee)
+            ->where('etat', 'F')
+            ->whereIn('contribuable_id', $contribuablesIds)
+            ->pluck('contribuable_id')
+            ->toArray();
+    }
+
+
+
+    public function getContribuables(Request $request)
+    {
+        $annee = $request->input('year') ?? $this->current_year();
+        $perPage = $request->input('per_page', 10);
+        $page = $request->input('page', 1);
+        $roleId = $request->input('role_id');
+        $search = $request->input('search');
+
+        $query = Contribuable::with('activite', 'ref_taille_activite', 'ref_emplacement_activite');
+
+        // Filter by role
+        if ($roleId) {
+            $query->whereIn('id', \App\Models\RolesContribuable::where('annee', $annee)
+                ->where('role_id', $roleId)
+                ->pluck('contribuable_id'));
+        }
+
+        // Search functionality
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('libelle', 'like', "%{$search}%")
+                    ->orWhere('representant', 'like', "%{$search}%")
+                    ->orWhere('adresse', 'like', "%{$search}%")
+                    ->orWhere('telephone', 'like', "%{$search}%");
+            });
+        }
+
+        $query->orderBy('created_at', 'desc');
+
+        $contribuables = $query->paginate($perPage, ['*'], 'page', $page);
+
+        $result = $contribuables->map(function ($contribuable) use ($annee) {
+            $contrib = \App\Models\ContribuablesAnnee::where('annee', $annee)
+                ->where('etat', 'F')
+                ->where('contribuable_id', $contribuable->id)
+                ->get();
+            return [
+                'id' => $contribuable->id,
+                'nbreRole' => $this->getNbreRole($contribuable->id, $annee),
+                'nbrearticle' => $this->getNbreArticle($contribuable->id, $annee),
+                'article' => $this->getArticles($contribuable->id, $annee),
+                'montant' => $this->getMontantTotal($contribuable->id, $annee),
+                'Roles' => $this->getRoles($contribuable->id, $annee),
+                'nom' => $contribuable->libelle,
+                'representant' => $contribuable->representant,
+                'telephone' => $contribuable->telephone,
+                'adresse' => $contribuable->adresse,
+                'activite' => $contribuable->activite->libelle ?? null,
+                'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
+                'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
+                'is_close' => $contrib->count() > 0
+            ];
         });
+
+        return response()->json([
+            'data' => $result,
+            'current_page' => $contribuables->currentPage(),
+            'last_page' => $contribuables->lastPage(),
+            'per_page' => $contribuables->perPage(),
+            'total' => $contribuables->total(),
+        ]);
     }
-
-    $query->orderBy('created_at', 'desc');
-
-    $contribuables = $query->paginate($perPage, ['*'], 'page', $page);
-
-    $result = $contribuables->map(function ($contribuable) use ($annee) {
-        $contrib = \App\Models\ContribuablesAnnee::where('annee', $annee)
-                                                 ->where('etat', 'F')
-                                                 ->where('contribuable_id', $contribuable->id)
-                                                 ->get();
-        return [
-            'id' => $contribuable->id,
-            'nbreRole' => $this->getNbreRole($contribuable->id, $annee),
-            'nbrearticle' => $this->getNbreArticle($contribuable->id, $annee),
-            'article' => $this->getArticles($contribuable->id, $annee),
-            'montant' => $this->getMontantTotal($contribuable->id, $annee),
-            'Roles' => $this->getRoles($contribuable->id, $annee),
-            'nom' => $contribuable->libelle,
-            'representant' => $contribuable->representant,
-            'telephone' => $contribuable->telephone,
-            'adresse' => $contribuable->adresse,
-            'activite' => $contribuable->activite->libelle ?? null,
-            'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
-            'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
-            'is_close' => $contrib->count() > 0
-        ];
-    });
-
-    return response()->json([
-        'data' => $result,
-        'current_page' => $contribuables->currentPage(),
-        'last_page' => $contribuables->lastPage(),
-        'per_page' => $contribuables->perPage(),
-        'total' => $contribuables->total(),
-    ]);
-}
     private function getNbreRole($contribuableId, $annee)
     {
         $roles = RolesAnnee::where('annee', $annee)->get();
@@ -412,19 +404,19 @@ public function getContribuables(Request $request)
 
 
 
-     private function updateBudgetAmounts($year, $amount, $type)
-{
-    $budget = Budget::where('annee', $year)->first();
+    private function updateBudgetAmounts($year, $amount, $type)
+    {
+        $budget = Budget::where('annee', $year)->first();
 
 
-    if ($type === 'cf') {
-        $budget->montant_cf = ($budget->montant_cf ?? 0) + $amount;
-    } elseif ($type === 'patente') {
-        $budget->montant_patente = ($budget->montant_patente ?? 0) + $amount;
+        if ($type === 'cf') {
+            $budget->montant_cf = ($budget->montant_cf ?? 0) + $amount;
+        } elseif ($type === 'patente') {
+            $budget->montant_patente = ($budget->montant_patente ?? 0) + $amount;
+        }
+
+        $budget->save();
     }
-
-    $budget->save();
-}
     public function uploadExcel(Request $request)
     {
         $request->validate([
@@ -557,8 +549,8 @@ public function getContribuables(Request $request)
     private function processRoleCF($rowData, $annee, $columnMap)
     {
 
-        
-        
+
+
 
         $this->updateBudgetAmounts($annee, $rowData[$columnMap['Montant']], 'cf');
         return Contribuable::firstOrCreate(
@@ -819,7 +811,7 @@ public function getContribuables(Request $request)
         ];
 
 
-        Log::info('data ..'.json_encode($data));
+        Log::info('data ..' . json_encode($data));
 
         $pdf = PDF::loadView('fiche_fermeture', $data);
 
@@ -1553,222 +1545,244 @@ public function getContribuables(Request $request)
     }
 
 
-    
-    
+
+
 
     public function getDashboardStats(Request $request)
-{
-    $currentYear = $this->current_year();
-    $year = $request->input('year', $currentYear);
-    $startDate = $request->input('startDate');
-    $endDate = $request->input('endDate');
+    {
+        $currentYear = $this->current_year();
+        $year = $request->input('year', $currentYear);
+        $startDate = $request->input('startDate');
+        $endDate = $request->input('endDate');
 
-    $query = function ($model) use ($year, $startDate, $endDate) {
-        $query = $model::whereYear('created_at', $year);
-        if ($startDate && $endDate) {
-            $query->whereBetween('created_at', [$startDate, $endDate]);
+        $query = function ($model) use ($year, $startDate, $endDate) {
+            $query = $model::whereYear('created_at', $year);
+            if ($startDate && $endDate) {
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            }
+            return $query;
+        };
+
+        // Current period stats
+        $totalDegrevements = $this->getDegrevements($query);
+        $totalPayment = $this->getPayments($query);
+        $totalDue = $this->getTotalDue($year);
+
+        // Previous period stats for comparison
+        $prevStartDate = $startDate ? Carbon::parse($startDate)->subMonth() : Carbon::now()->subMonth()->startOfMonth();
+        $prevEndDate = $endDate ? Carbon::parse($endDate)->subMonth() : Carbon::now()->subMonth()->endOfMonth();
+
+        $prevQuery = function ($model) use ($year, $prevStartDate, $prevEndDate) {
+            return $model::whereYear('created_at', $year)
+                ->whereBetween('created_at', [$prevStartDate, $prevEndDate]);
+        };
+
+        $prevDegrevements = $this->getDegrevements($prevQuery);
+        $prevPayment = $this->getPayments($prevQuery);
+        $prevDue = $this->getTotalDue($year, $prevEndDate);
+
+        // Calculate percentage changes
+        $degrevermentChange = $this->calculatePercentageChange($prevDegrevements, $totalDegrevements);
+        $paymentChange = $this->calculatePercentageChange($prevPayment, $totalPayment);
+        $totalChange = $this->calculatePercentageChange($prevDegrevements + $prevPayment, $totalDegrevements + $totalPayment);
+        $restAPayerChange = $this->calculatePercentageChange($prevDue - $prevPayment, $totalDue - $totalPayment);
+
+        $totalContribuables = Contribuable::count();
+        $activeContribuables = ContribuablesAnnee::where('annee', $year)
+            ->where(function ($query) {
+                $query->where('etat', '<>', 'F')
+                    ->orWhereNull('etat');
+            })
+            ->count();
+        $inactiveContribuables = $totalContribuables - $activeContribuables;
+
+        $recoveryRate = $totalDue > 0 ? $totalPayment / $totalDue : 0;
+
+        $monthlyPayments = $this->getMonthlyPaymentsBreakdown($year, $startDate, $endDate);
+        $taxDistribution = $this->getTaxDistribution($year, $startDate, $endDate);
+        $paymentTrend = $this->getPaymentTrend($year, $startDate, $endDate);
+
+
+
+
+        Log::info('year' . $year);
+
+        // Calculate past year dégrevements with proper casting
+        $pastYearDegrevements = DegrevementContribuable::whereYear('created_at', $year)
+            ->whereRaw('CAST(annee AS INTEGER) < EXTRACT(YEAR FROM created_at)')
+            ->sum(DB::raw('CAST(montant AS DECIMAL(15,2))'));
+
+        // Calculate past year payments with proper casting
+        $pastYearPayments = Payement::whereYear('date', $year)
+            ->whereRaw('CAST(annee AS INTEGER) < EXTRACT(YEAR FROM date)')
+            ->sum(DB::raw('CAST(montant AS DECIMAL(15,2))'));
+
+        $pastYearPayments += Payementmens::whereYear('date', $year)
+            ->whereRaw('CAST(annee AS INTEGER) < EXTRACT(YEAR FROM date)')
+            ->sum(DB::raw('CAST(montant AS DECIMAL(15,2))'));
+        return response()->json([
+            'totalDegrevements' => $totalDegrevements,
+            'totalPayment' => $totalPayment,
+            'total' => $totalDegrevements + $totalPayment,
+            'totalRestAPayer' => $totalDue - $totalPayment,
+            'totalContribuables' => $totalContribuables,
+            'activeContribuables' => $activeContribuables,
+            'inactiveContribuables' => $inactiveContribuables,
+            'recoveryRate' => $recoveryRate,
+            'monthlyPayments' => $monthlyPayments,
+            'taxDistribution' => $taxDistribution,
+            'paymentTrend' => $paymentTrend,
+            'degrevermentChange' => $degrevermentChange,
+            'paymentChange' => $paymentChange,
+            'totalChange' => $totalChange,
+            'restAPayerChange' => $restAPayerChange,
+            'pastYearDegrevements' => $pastYearDegrevements,
+            'pastYearPayments' => $pastYearPayments,
+        ]);
+    }
+
+
+    private function calculatePercentageChange($oldValue, $newValue)
+    {
+        if ($oldValue == 0) {
+            return $newValue > 0 ? 100 : 0;
         }
-        return $query;
-    };
-
-    // Current period stats
-    $totalDegrevements = $this->getDegrevements($query);
-    $totalPayment = $this->getPayments($query);
-    $totalDue = $this->getTotalDue($year);
-
-    // Previous period stats for comparison
-    $prevStartDate = $startDate ? Carbon::parse($startDate)->subMonth() : Carbon::now()->subMonth()->startOfMonth();
-    $prevEndDate = $endDate ? Carbon::parse($endDate)->subMonth() : Carbon::now()->subMonth()->endOfMonth();
-    
-    $prevQuery = function ($model) use ($year, $prevStartDate, $prevEndDate) {
-        return $model::whereYear('created_at', $year)
-            ->whereBetween('created_at', [$prevStartDate, $prevEndDate]);
-    };
-
-    $prevDegrevements = $this->getDegrevements($prevQuery);
-    $prevPayment = $this->getPayments($prevQuery);
-    $prevDue = $this->getTotalDue($year, $prevEndDate);
-
-    // Calculate percentage changes
-    $degrevermentChange = $this->calculatePercentageChange($prevDegrevements, $totalDegrevements);
-    $paymentChange = $this->calculatePercentageChange($prevPayment, $totalPayment);
-    $totalChange = $this->calculatePercentageChange($prevDegrevements + $prevPayment, $totalDegrevements + $totalPayment);
-    $restAPayerChange = $this->calculatePercentageChange($prevDue - $prevPayment, $totalDue - $totalPayment);
-
-    $totalContribuables = Contribuable::count();
-    $activeContribuables = ContribuablesAnnee::where('annee', $year)
-        ->where(function ($query) {
-            $query->where('etat', '<>', 'F')
-                ->orWhereNull('etat');
-        })
-        ->count();
-    $inactiveContribuables = $totalContribuables - $activeContribuables;
-
-    $recoveryRate = $totalDue > 0 ? $totalPayment / $totalDue : 0;
-
-    $monthlyPayments = $this->getMonthlyPaymentsBreakdown($year, $startDate, $endDate);
-    $taxDistribution = $this->getTaxDistribution($year, $startDate, $endDate);
-    $paymentTrend = $this->getPaymentTrend($year, $startDate, $endDate);
-
-
-
-
-    Log::info('year' . $year);
-
-     // Calculate past year dégrevements with proper casting
-    $pastYearDegrevements = DegrevementContribuable::whereYear('created_at', $year)
-        ->whereRaw('CAST(annee AS INTEGER) < EXTRACT(YEAR FROM created_at)')
-        ->sum(DB::raw('CAST(montant AS DECIMAL(15,2))'));
-
-    // Calculate past year payments with proper casting
-    $pastYearPayments = Payement::whereYear('date', $year)
-        ->whereRaw('CAST(annee AS INTEGER) < EXTRACT(YEAR FROM date)')
-        ->sum(DB::raw('CAST(montant AS DECIMAL(15,2))'));
-
-    $pastYearPayments += Payementmens::whereYear('date', $year)
-        ->whereRaw('CAST(annee AS INTEGER) < EXTRACT(YEAR FROM date)')
-        ->sum(DB::raw('CAST(montant AS DECIMAL(15,2))'));
-    return response()->json([
-        'totalDegrevements' => $totalDegrevements,
-        'totalPayment' => $totalPayment,
-        'total' => $totalDegrevements + $totalPayment,
-        'totalRestAPayer' => $totalDue - $totalPayment,
-        'totalContribuables' => $totalContribuables,
-        'activeContribuables' => $activeContribuables,
-        'inactiveContribuables' => $inactiveContribuables,
-        'recoveryRate' => $recoveryRate,
-        'monthlyPayments' => $monthlyPayments,
-        'taxDistribution' => $taxDistribution,
-        'paymentTrend' => $paymentTrend,
-        'degrevermentChange' => $degrevermentChange,
-        'paymentChange' => $paymentChange,
-        'totalChange' => $totalChange,
-        'restAPayerChange' => $restAPayerChange,
-        'pastYearDegrevements' => $pastYearDegrevements,
-        'pastYearPayments' => $pastYearPayments,
-    ]);
-}
-
-
-private function calculatePercentageChange($oldValue, $newValue)
-{
-    if ($oldValue == 0) {
-        return $newValue > 0 ? 100 : 0;
+        return (($newValue - $oldValue) / $oldValue) * 100;
     }
-    return (($newValue - $oldValue) / $oldValue) * 100;
-}
 
-private function getDegrevements($query)
-{
-    return $query(DegrevementContribuable::class)->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
-}
-
-private function getPayments($query)
-{
-    $payements = $query(Payement::class)->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
-    $payementmens = $query(Payementmens::class)->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
-    return $payements + $payementmens;
-}
-
-private function getTotalDue($year, $endDate = null)
-{
-    $query = RolesContribuable::where('annee', $year);
-    if ($endDate) {
-        $query->where('created_at', '<=', $endDate);
+    private function getDegrevements($query)
+    {
+        return $query(DegrevementContribuable::class)->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
     }
-    return $query->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
-}
 
-private function getMonthlyPaymentsBreakdown($year, $startDate, $endDate)
-{
-    $query = Payement::where('annee', $year);
-    if ($startDate && $endDate) {
-        $query->whereBetween('date', [$startDate, $endDate]);
+    private function getPayments($query)
+    {
+        $payements = $query(Payement::class)->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
+        $payementmens = $query(Payementmens::class)->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
+        return $payements + $payementmens;
     }
-    return $query->selectRaw("EXTRACT(MONTH FROM date) as month, SUM(CAST(montant AS DECIMAL(10,2))) as total")
-        ->groupBy('month')
-        ->orderBy('month')
-        ->get()
-        ->pluck('total', 'month')
-        ->toArray();
-}
 
-private function getTaxDistribution($year, $startDate, $endDate)
-{
-    $query = RolesContribuable::where('roles_contribuables.annee', $year)
-        ->join('roles_annees', 'roles_contribuables.role_id', '=', 'roles_annees.id');
-    if ($startDate && $endDate) {
-        $query->whereBetween('roles_contribuables.created_at', [$startDate, $endDate]);
+    private function getTotalDue($year, $endDate = null)
+    {
+        $query = RolesContribuable::where('annee', $year);
+        if ($endDate) {
+            $query->where('created_at', '<=', $endDate);
+        }
+        return $query->sum(DB::raw('CAST(montant AS DECIMAL(10,2))'));
     }
-    return $query->selectRaw('roles_annees.libelle, SUM(CAST(roles_contribuables.montant AS DECIMAL(10,2))) as total')
-        ->groupBy('roles_annees.id', 'roles_annees.libelle')
-        ->get()
-        ->pluck('total', 'libelle')
-        ->toArray();
-}
 
-private function getPaymentTrend($year, $startDate, $endDate)
-{
-    $query = Payement::where('annee', $year);
-    if ($startDate && $endDate) {
-        $query->whereBetween('date', [$startDate, $endDate]);
+    private function getMonthlyPaymentsBreakdown($year, $startDate, $endDate)
+    {
+        $query = Payement::where('annee', $year);
+        if ($startDate && $endDate) {
+            $query->whereBetween('date', [$startDate, $endDate]);
+        }
+        return $query->selectRaw("EXTRACT(MONTH FROM date) as month, SUM(CAST(montant AS DECIMAL(10,2))) as total")
+            ->groupBy('month')
+            ->orderBy('month')
+            ->get()
+            ->pluck('total', 'month')
+            ->toArray();
     }
-    return $query->selectRaw("DATE(date) as date, SUM(CAST(montant AS DECIMAL(10,2))) as total")
-        ->groupBy('date')
-        ->orderBy('date')
-        ->get()
-        ->pluck('total', 'date')
-        ->toArray();
-}
+
+    private function getTaxDistribution($year, $startDate, $endDate)
+    {
+        $query = RolesContribuable::where('roles_contribuables.annee', $year)
+            ->join('roles_annees', 'roles_contribuables.role_id', '=', 'roles_annees.id');
+        if ($startDate && $endDate) {
+            $query->whereBetween('roles_contribuables.created_at', [$startDate, $endDate]);
+        }
+        return $query->selectRaw('roles_annees.libelle, SUM(CAST(roles_contribuables.montant AS DECIMAL(10,2))) as total')
+            ->groupBy('roles_annees.id', 'roles_annees.libelle')
+            ->get()
+            ->pluck('total', 'libelle')
+            ->toArray();
+    }
+
+    private function getPaymentTrend($year, $startDate, $endDate)
+    {
+        $query = Payement::where('annee', $year);
+        if ($startDate && $endDate) {
+            $query->whereBetween('date', [$startDate, $endDate]);
+        }
+        return $query->selectRaw("DATE(date) as date, SUM(CAST(montant AS DECIMAL(10,2))) as total")
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get()
+            ->pluck('total', 'date')
+            ->toArray();
+    }
+
+
     public function getFilteredContribuables(Request $request)
     {
         $request->validate([
-            'montantMinimum' => 'required|numeric|min:0',
-            'joursDepuisDernierPaiement' => 'required|integer|min:0',
+            'montantMinimum' => 'nullable|numeric|min:0',
+            'joursDepuisDernierPaiement' => 'nullable|integer|min:0',
+            'search' => 'nullable|string',
+            'page' => 'nullable|integer|min:1',
+            'pageSize' => 'nullable|integer|min:1|max:100',
         ]);
-
+    
         $montantMinimum = $request->input('montantMinimum');
         $joursDepuisDernierPaiement = $request->input('joursDepuisDernierPaiement');
+        $search = $request->input('search');
+        $page = $request->input('page', 1);
+        $pageSize = $request->input('pageSize', 20);
         $currentYear = $this->current_year();
-
-        $contribuables = Contribuable::select('contribuables.*')
+    
+        $query = Contribuable::select('contribuables.*')
+            ->selectRaw('SUM(CAST(NULLIF(roles_contribuables.montant, \'\') AS DECIMAL)) - COALESCE(SUM(CAST(NULLIF(roles_contribuables.montant_paye, \'\') AS DECIMAL)), 0) as montant_du')
             ->join('roles_contribuables', 'contribuables.id', '=', 'roles_contribuables.contribuable_id')
             ->where('roles_contribuables.annee', $currentYear)
-            ->groupBy('contribuables.id')
-            ->havingRaw('SUM(CAST(roles_contribuables.montant AS DECIMAL)) - COALESCE(SUM(CAST(roles_contribuables.montant_paye AS DECIMAL)), 0) >= ?', [$montantMinimum])
+            ->whereNull('contribuables.deleted_at')
+            ->groupBy('contribuables.id');
+    
+        if ($montantMinimum !== null) {
+            $query->havingRaw('SUM(CAST(NULLIF(roles_contribuables.montant, \'\') AS DECIMAL)) - COALESCE(SUM(CAST(NULLIF(roles_contribuables.montant_paye, \'\') AS DECIMAL)), 0) >= ?', [$montantMinimum]);
+        }
+    
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('contribuables.libelle', 'ILIKE', "%$search%")
+                    ->orWhere('contribuables.montant', 'ILIKE', "%$search%");
+            });
+        }
+    
+        $totalCount = $query->count();
+    
+        $contribuables = $query->offset(($page - 1) * $pageSize)
+            ->limit($pageSize)
             ->get();
-
-        $filteredContribuables = $contribuables->filter(function ($contribuable) use ($joursDepuisDernierPaiement) {
-            $lastPayment = $this->getLastPaymentDate($contribuable->id);
-            if (!$lastPayment) {
-                return true; // Include contribuables who have never made a payment
-            }
-            $daysSinceLastPayment = Carbon::parse($lastPayment)->diffInDays(Carbon::now());
-            return $daysSinceLastPayment >= $joursDepuisDernierPaiement;
-        });
-
-        $result = $filteredContribuables->map(function ($contribuable) use ($currentYear) {
+    
+        if ($joursDepuisDernierPaiement !== null) {
+            $contribuables = $contribuables->filter(function ($contribuable) use ($joursDepuisDernierPaiement) {
+                $lastPayment = $this->getLastPaymentDate($contribuable->id);
+                if (!$lastPayment) {
+                    return true; // Include contribuables who have never made a payment
+                }
+                $daysSinceLastPayment = Carbon::parse($lastPayment)->diffInDays(Carbon::now());
+                return $daysSinceLastPayment >= $joursDepuisDernierPaiement;
+            });
+        }
+    
+        $result = $contribuables->map(function ($contribuable) use ($currentYear) {
             return [
                 'id' => $contribuable->id,
                 'nom' => $contribuable->libelle,
-                'montant' => $this->getMontantDu($contribuable->id, $currentYear),
+                'montant' => $contribuable->montant_du,
                 'dernierPaiement' => $this->getLastPaymentDate($contribuable->id),
             ];
-        })->values()->all();
-
-
-        return response()->json($result);
+        })->values();
+    
+        return response()->json([
+            'data' => $result,
+            'total' => $totalCount,
+            'current_page' => $page,
+            'per_page' => $pageSize,
+            'last_page' => ceil($totalCount / $pageSize),
+        ]);
     }
-
-    private function getMontantDu($contribuableId, $annee)
-    {
-        $totalDu = RolesContribuable::where('contribuable_id', $contribuableId)
-            ->where('annee', $annee)
-            ->sum(DB::raw('CAST(montant AS DECIMAL) - COALESCE(CAST(montant_paye AS DECIMAL), 0)'));
-
-        return $totalDu;
-    }
-
     private function getLastPaymentDate($contribuableId)
     {
         $lastPayement = Payement::where('contribuable_id', $contribuableId)
@@ -1789,9 +1803,19 @@ private function getPaymentTrend($year, $startDate, $endDate)
 
         return null;
     }
+    private function getMontantDu($contribuableId, $annee)
+    {
+        $totalDu = RolesContribuable::where('contribuable_id', $contribuableId)
+            ->where('annee', $annee)
+            ->sum(DB::raw('CAST(montant AS DECIMAL) - COALESCE(CAST(montant_paye AS DECIMAL), 0)'));
+
+        return $totalDu;
+    }
 
 
-    
+
+
+
 
     public function pdfSuiviPayementCtb(Request $request)
     {
@@ -1802,9 +1826,9 @@ private function getPaymentTrend($year, $startDate, $endDate)
         $filtrage = $request->input('filter');
         $date1 = $request->input('startDate');
         $date2 = $request->input('endDate');
-    
+
         $role = 'all';
-        $data = $this->prepareData( $filtrage, $date1, $date2, $role);
+        $data = $this->prepareData($filtrage, $date1, $date2, $role);
 
 
 
@@ -1814,7 +1838,7 @@ private function getPaymentTrend($year, $startDate, $endDate)
 
     }
 
-    private function prepareData( $filtrage, $date1, $date2, $role)
+    private function prepareData($filtrage, $date1, $date2, $role)
     {
         $data = [
             'filtrage' => $filtrage,
@@ -1838,81 +1862,81 @@ private function getPaymentTrend($year, $startDate, $endDate)
 
 
     private function prepareDataFiltrage1($data)
-{
+    {
 
-    $query = Payement::where('montant', '<>', 0);
+        $query = Payement::where('montant', '<>', 0);
 
-    if ($data['date1'] !== null) {
-        $query->where('date', '>=', $data['date1']);
-    }
-
-    if ($data['date2'] !== null) {
-        $query->where('date', '<=', $data['date2']);
-    }
-
-    $payementprotocoles = $query->get();
-
-    $queryPayements = Payementmens::where('montant', '<>', 0);
-
-    if ($data['date1'] !== null) {
-        $queryPayements->where('date', '>=', $data['date1']);
-    }
-
-    if ($data['date2'] !== null) {
-        $queryPayements->where('date', '<=', $data['date2']);
-    }
-
-    if ($data['role'] != 'all') {
-        $queryPayements->where('role_id', $data['role']);
-        $roleli = RolesAnnee::find($data['role']);
-        $data['libelleRole'] = '<br>Rôle : <b>' . $roleli->libelle . '</b>';
-    }
-
-    $payements = $queryPayements->get();
-
-    $data['payements'] = $payements;
-    $data['payementprotocoles'] = $payementprotocoles;
-
-    return $data;
-}
- 
-private function prepareDataFiltrage2($data)
-{
-    $query = DegrevementContribuable::where('montant', '<>', 0);
-
-
-    if ($data['date1'] !== null) {
-        $query->where('created_at', '>=', $data['date1']);
-    }
-
-    if ($data['date2'] !== null) {
-        $query->where('created_at', '<=', $data['date2']);
-    }
-
-    $payements = $query->get();
-
-    $data['payements'] = $payements;
-
-    return $data;
-}
-
-private function prepareDataFiltrage3($data)
-{
-    $contribuables = Contribuable::all();
-    $data['contribuables'] = $contribuables;
-
-    if ($data['role'] !== null && $data['role'] !== 'all') {
-        $roleli = RolesAnnee::find($data['role']);
-        if ($roleli) {
-            $data['libelleRole'] = '<br>Rôle : <b>' . $roleli->libelle . '</b>';
-        } else {
-            $data['libelleRole'] = '<br>Rôle : <b>Non trouvé</b>';
+        if ($data['date1'] !== null) {
+            $query->where('date', '>=', $data['date1']);
         }
+
+        if ($data['date2'] !== null) {
+            $query->where('date', '<=', $data['date2']);
+        }
+
+        $payementprotocoles = $query->get();
+
+        $queryPayements = Payementmens::where('montant', '<>', 0);
+
+        if ($data['date1'] !== null) {
+            $queryPayements->where('date', '>=', $data['date1']);
+        }
+
+        if ($data['date2'] !== null) {
+            $queryPayements->where('date', '<=', $data['date2']);
+        }
+
+        if ($data['role'] != 'all') {
+            $queryPayements->where('role_id', $data['role']);
+            $roleli = RolesAnnee::find($data['role']);
+            $data['libelleRole'] = '<br>Rôle : <b>' . $roleli->libelle . '</b>';
+        }
+
+        $payements = $queryPayements->get();
+
+        $data['payements'] = $payements;
+        $data['payementprotocoles'] = $payementprotocoles;
+
+        return $data;
     }
 
+    private function prepareDataFiltrage2($data)
+    {
+        $query = DegrevementContribuable::where('montant', '<>', 0);
 
 
-    return $data;
-}
+        if ($data['date1'] !== null) {
+            $query->where('created_at', '>=', $data['date1']);
+        }
+
+        if ($data['date2'] !== null) {
+            $query->where('created_at', '<=', $data['date2']);
+        }
+
+        $payements = $query->get();
+
+        $data['payements'] = $payements;
+
+        return $data;
+    }
+
+    private function prepareDataFiltrage3($data)
+    {
+        $contribuables = Contribuable::all();
+        $data['contribuables'] = $contribuables;
+
+        if ($data['role'] !== null && $data['role'] !== 'all') {
+            $roleli = RolesAnnee::find($data['role']);
+            if ($roleli) {
+                $data['libelleRole'] = '<br>Rôle : <b>' . $roleli->libelle . '</b>';
+            } else {
+                $data['libelleRole'] = '<br>Rôle : <b>Non trouvé</b>';
+            }
+        }
+
+
+
+        return $data;
+    }
 
 }

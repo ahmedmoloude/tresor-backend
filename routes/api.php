@@ -80,6 +80,9 @@ Route::post('/contribuables/{id}/payment-by-protocol', [ContribuableController::
 
 
 
+Route::post('/programmes/add-with-contribuables', [ProgrammeController::class, 'addProgrammeWithContribuables']);
+
+
 Route::prefix('programmes')->group(function () {
     Route::get('/all', [ProgrammeController::class, 'getProgrammes']);
     Route::post('/add', [ProgrammeController::class, 'addProgramme']);
@@ -128,6 +131,7 @@ Route::get('/emplacements', [RoleAnneeController::class, 'getEmplacements']);
 Route::get('/tailles', [RoleAnneeController::class, 'getTailles']);
 
 Route::get('/tax-payers/export-pvf/{id}', [ContribuableController::class, 'fichdefermercontribuable']);
+
 
 
 
