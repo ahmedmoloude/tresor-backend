@@ -1736,7 +1736,7 @@ class ContribuableController extends Controller
             ->join('roles_contribuables', 'contribuables.id', '=', 'roles_contribuables.contribuable_id')
             ->where('roles_contribuables.annee', $currentYear)
             ->whereNull('contribuables.deleted_at')
-            ->groupBy('contribuables.id');
+            ->groupBy('contribuables.id', 'contribuables.activite_id', 'contribuables.ref_emplacement_activite_id', 'contribuables.ref_taille_activite_id', 'contribuables.libelle', 'contribuables.libelle_ar', 'contribuables.representant', 'contribuables.adresse', 'contribuables.telephone', 'contribuables.date_mas', 'contribuables.montant', 'contribuables.article', 'contribuables.etat', 'contribuables.created_at', 'contribuables.updated_at', 'contribuables.deleted_at');
     
         if ($montantMinimum !== null) {
             $query->havingRaw('SUM(CAST(NULLIF(roles_contribuables.montant, \'\') AS DECIMAL)) - COALESCE(SUM(CAST(NULLIF(roles_contribuables.montant_paye, \'\') AS DECIMAL)), 0) >= ?', [$montantMinimum]);
