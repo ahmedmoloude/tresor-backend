@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Annee;
 use App\Models\Activite;
 use App\Models\RolesAnnee;
 use App\Models\ForchetteTax;
@@ -12,12 +13,38 @@ use App\Http\Controllers\Controller;
 use App\Models\RefCategorieActivite;
 use App\Models\RefEmplacementActivite;
 use Illuminate\Support\Facades\Validator;
+use Log;
 
 class RoleAnneeController extends Controller
 {
-    public function index()
+
+    private function current_year()
     {
-        $roles = RolesAnnee::all();
+        return Annee::where('etat', 1)->first()->annee ?? date('Y');
+    }
+    public function index(Request $request)
+    {
+        $year = $request->input('year', $this->current_year());
+
+
+
+        Log::info('year'.$year);
+
+        
+        if ($year == 'all') {
+
+            $roles = RolesAnnee::all();
+
+
+        }
+        else {
+
+            $roles = RolesAnnee::where('annee', $year)
+            ->where('etat', '<>', 2)
+            ->get();
+        }
+     
+
         return response()->json($roles);
     }
 

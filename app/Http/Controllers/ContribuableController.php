@@ -44,15 +44,13 @@ class ContribuableController extends Controller
 
     public function getAllContribuables(Request $request)
     {
-        $annee = $this->current_year();
         $search = $request->input('search', '');
         $perPage = $request->input('per_page', 20);
 
         $query = Contribuable::query()
             ->select('contribuables.*')
-            ->join('contribuables_annees', function ($join) use ($annee) {
+            ->join('contribuables_annees', function ($join)  {
                 $join->on('contribuables.id', '=', 'contribuables_annees.contribuable_id')
-                    ->where('contribuables_annees.annee', '=', $annee)
                     ->where(function ($query) {
                         $query->where('contribuables_annees.etat', '<>', 'F')
                             ->orWhereNull('contribuables_annees.etat');
@@ -72,7 +70,6 @@ class ContribuableController extends Controller
         // Fetch related data for all contribuables at once
         $rolesContribuables = RolesContribuable::with('role')
             ->whereIn('contribuable_id', $contribuablesIds)
-            ->where('annee', $annee)
             ->get()
             ->groupBy('contribuable_id');
 
@@ -80,13 +77,13 @@ class ContribuableController extends Controller
             ->get()
             ->groupBy('contribuable_id');
 
-        $nbreRoles = $this->getNbreRoles($contribuablesIds, $annee);
-        $nbreArticles = $this->getNbreArticle($contribuablesIds, $annee);
-        $articles = $this->getArticles($contribuablesIds, $annee);
-        $montantTotals = $this->getMontantTotal($contribuablesIds, $annee);
-        $closedContribuables = $this->getClosedContribuables($contribuablesIds, $annee);
+        // $nbreRoles = $this->getNbreRoles($contribuablesIds, $annee);
+        // $nbreArticles = $this->getNbreArticle($contribuablesIds, $annee);
+        // $articles = $this->getArticles($contribuablesIds, $annee);
+        // $montantTotals = $this->getMontantTotal($contribuablesIds, $annee);
+        // $closedContribuables = $this->getClosedContribuables($contribuablesIds, $annee);
 
-        $result = $contribuables->map(function ($contribuable) use ($annee, $rolesContribuables, $protocoles, $nbreRoles, $nbreArticles, $articles, $montantTotals, $closedContribuables) {
+        $result = $contribuables->map(function ($contribuable) use ($rolesContribuables, $protocoles) {
             return [
                 'id' => $contribuable->id,
                 'nbreRole' => $nbreRoles[$contribuable->id] ?? 0,
@@ -102,9 +99,7 @@ class ContribuableController extends Controller
                 'activite' => $contribuable->activite->libelle ?? null,
                 'taille_activite' => $contribuable->ref_taille_activite->libelle ?? null,
                 'emplacement_activite' => $contribuable->ref_emplacement_activite->libelle ?? null,
-                'is_close' => in_array($contribuable->id, $closedContribuables),
                 'amountDue' => RolesContribuable::where('contribuable_id', $contribuable->id)
-                ->where('annee', $annee)
                 ->sum(DB::raw('CAST(montant AS DECIMAL(10,2)) - COALESCE(CAST(montant_paye AS DECIMAL(10,2)), 0)'))
     
             ];
@@ -163,10 +158,8 @@ class ContribuableController extends Controller
         // Search functionality
         if ($search) {
             $query->where(function ($q) use ($search) {
-                $q->where('libelle', 'like', "%{$search}%")
-                    ->orWhere('representant', 'like', "%{$search}%")
-                    ->orWhere('adresse', 'like', "%{$search}%")
-                    ->orWhere('telephone', 'like', "%{$search}%");
+                $q->where('libelle', 'ILIKE', "%$search")
+                    ->orWhere('representant', 'ILIKE', "%$search");
             });
         }
 
@@ -371,12 +364,28 @@ class ContribuableController extends Controller
 
 
 
-    public function getAllRoles()
+    public function getAllRoles(Request $request )
     {
+        $year = $request->input('year', $this->current_year());
 
-        $annee = Annee::where('etat', 1)->get()->first();
 
-        $roles = RolesAnnee::where('annee', $annee->annee)->where('etat', '<>', 2)->get();
+        Log::info('year'.$year);
+
+        
+        if ($year == 'all' || $year == '') {
+
+            $roles = RolesAnnee::all();
+
+
+        }
+        else {
+
+            $roles = RolesAnnee::where('annee', $year)
+            ->where('etat', '<>', 2)
+            ->get();
+        }
+     
+
         return response()->json($roles);
     }
 
@@ -1854,8 +1863,10 @@ class ContribuableController extends Controller
         $date1 = $request->input('startDate');
         $date2 = $request->input('endDate');
 
-        $role = 'all';
-        $data = $this->prepareData($filtrage, $date1, $date2, $role);
+        $year = $request->input('year', 'all');
+        $role = $request->input('role', 'all');
+
+        $data = $this->prepareData($filtrage, $date1, $date2, $role , $year);
 
 
 
@@ -1865,13 +1876,14 @@ class ContribuableController extends Controller
 
     }
 
-    private function prepareData($filtrage, $date1, $date2, $role)
+    private function prepareData($filtrage, $date1, $date2, $role , $year)
     {
         $data = [
             'filtrage' => $filtrage,
             'date1' => $date1,
             'date2' => $date2,
             'role' => $role,
+            'year' => $year
 
         ];
 
@@ -1919,6 +1931,12 @@ class ContribuableController extends Controller
             $data['libelleRole'] = '<br>Rôle : <b>' . $roleli->libelle . '</b>';
         }
 
+
+        if ($data['year'] != 'all') {
+            $queryPayements->where('annee', $data['year']);
+        }
+
+
         $payements = $queryPayements->get();
 
         $data['payements'] = $payements;
@@ -1939,6 +1957,11 @@ class ContribuableController extends Controller
         if ($data['date2'] !== null) {
             $query->where('created_at', '<=', $data['date2']);
         }
+
+        if ($data['year'] != 'all') {
+            $query->where('annee', $data['year']);
+        }
+
 
         $payements = $query->get();
 
@@ -1961,6 +1984,9 @@ class ContribuableController extends Controller
             }
         }
 
+        if ($data['year'] != 'all') {
+            $data['annee'] = $data['year'];
+        }
 
 
         return $data;
